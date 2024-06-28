@@ -121,6 +121,8 @@ class kirchhoffPlateSolid
         //  areaPatch to the areaShadowPatch
         mutable label areaShadowPatchID_;
 
+        //- Boolean for block-coupled -- SB
+        const bool coupled_;
 
     // Private Member Functions
 

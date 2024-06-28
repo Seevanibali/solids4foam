@@ -28,6 +28,9 @@ License
 #include "linearElastic.H"
 
 //#include "BlockLduSystem.H"
+#include "SparseMatrixTemplate.H"
+// #include "sparseMatrix.H"
+#include "sparseMatrixTools.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -430,7 +433,8 @@ kirchhoffPlateSolid::kirchhoffPlateSolid
     h_(solidModelDict().lookup("plateThickness")),
     bendingStiffness_("zero", dimPressure*dimVolume, 0.0),
     areaPatchID_(-1),
-    areaShadowPatchID_(-1)
+    areaShadowPatchID_(-1),
+    coupled_(solidModelDict().lookupOrDefault<bool>("coupled", false))
 {
     const PtrList<mechanicalLaw>& mechLaws = mechanical();
 
@@ -486,79 +490,142 @@ bool kirchhoffPlateSolid::evolve()
 
         Info<< "Solving the Kirchhoff plate equation for w and M" << endl;
 
-        // w and M equation loop
-        do
+        if (coupled_)
         {
-            // Algorithm
-            // Solve M equation
-            // Solve w equation
-            // where
-            // M is the moment sum
-            // w is the transvere (out of plane) displacement
-            // The M equation is:
-            //     rho*h*fac::d2dt2(w) = fam::laplacian(M) + p
-            // and the w equation is:
-            //     fam::laplacian(D, w) + M
-            // where
-            // rho is the density
-            // h is the plate thickness
-            // p is the net transverse pressure
-            // D is the bending stiffness
-            // THESE ARE BOTH SCALARS: IDEA: USE BLOCK COUPLED!
+            // Update boundary conditions
+            M_.correctBoundaryConditions();
+            w_.correctBoundaryConditions();
 
-            // Store fields for under-relaxation and residual calculation
-            M_.storePrevIter();
+            const label nCells = mesh().nCells();
+            const labelList& own = mesh().owner();
+            const labelList& nei = mesh().neighbour();
+            const vectorField& Sf = mesh().faceAreas();
 
-            // Solve M equation
-            // d2dt2 not implemented so calculate it manually using ddt
-            // Also, "==" complains so we will move all terms to left
-            faScalarMatrix MEqn
-            (
-                rho_*h_
-               *(
-                   fac::ddt(w_) - fac::ddt(w_.oldTime())
-                )/runTime().deltaT()
-              - fam::laplacian(M_) - p_
-            );
+            // Store boundary mesh information
+            const polyBoundaryMesh& boundaryMesh = mesh().boundaryMesh();
 
-            // Relax the linear system
-            MEqn.relax();
-
-            // Solve the linear system
-            solverPerfM = MEqn.solve();
-
-            // Relax the field
-            M_.relax();
-
-            // Store fields for under-relaxation and residual calculation
-            w_.storePrevIter();
-
-            // Solve w equation
-            faScalarMatrix wEqn
-            (
-                fam::laplacian(bendingStiffness_, w_) + M_
-            );
-
-            // Relax the linear system
-            wEqn.relax();
-
-            // Solve the linear system
-            solverPerfw = wEqn.solve();
-
-            // Relax the field
-            w_.relax();
-
-            // Update the angle of rotation
-            theta_ = -fac::grad(w_);
-
-            // Update the gradient of rotation field, used for non-orthogonal
-            // correction in clamped boundary conditions
-            gradTheta_ = fac::grad(theta_);
-
-            // Work in progress
-            // Use block-coupled framework to implicitly couple the equations
-            //if (coupled_)
+            // // Loop over boundary patches
+            // forAll(M_.boundaryField(), patch)
             // {
+        
+            //     // Loop over all faces of boundary patch
+            //     forAll(M_.boundaryField()[patch], facei)
+            //     {
+            //         const label& bCell = boundaryMesh[patch].faceCells()[facei];    // Boundary cell index
+            //         const label& face = boundaryMesh[patch].start() + facei;        // Face index
+                    
+            //         Info<< " bcell " << bCell << " face " << face << endl;
+            //     }
+            // }
+
+
+            // Initialise matrix (2 scalar equations of w and M per cell)
+            SparseMatrixTemplate<scalar> matrix(2*nCells);
+            
+            matrix.clear();
+
+            // Initialise source vector
+            scalarField source(2*nCells, 0.0);
+            
+            // Initialise solution field
+            scalarField solveMw(2*nCells, 0.0);
+
+            Info<< "Meqn laplacian boundary coeffs " << fam::laplacian(M_)->boundaryCoeffs() << endl;
+            
+            // Calculate Laplacian discretisation of M (moment sum)
+            const faScalarMatrix laplacianM(fam::laplacian(M_));
+            const scalarField& lapMDiag = laplacianM.diag();
+            // const scalarField& lapMUpper = laplacianM.upper();
+            Info<< "lap M int coeffs " << laplacianM.internalCoeffs() << endl;
+            // const scalarField& lapMBouCoeffs = laplacianM.boundaryCoeffs();
+
+            // Calculate Laplacian discretisation of w 
+            const faScalarMatrix laplacianW(fam::laplacian(bendingStiffness_, w_));
+            const scalarField& lapWDiag = laplacianW.diag();
+            // const scalarField& lapWUpper = laplacianM.upper();
+            // const scalarField& lapWIntCoeffs = laplacianM.internalCoeffs();
+            // const scalarField& lapMBouCoeffs = laplacianM.boundaryCoeffs();
+
+            // Assembling the diagonal coeffs of MEqn and wEqn into a block matrix
+            forAll(lapMDiag, i)
+            {
+                // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
+                // Need to change this to second order implicit Euler
+                scalar coeffwMEqn = mag(Sf[i])*rho_.value()
+                    *h_.value()/(sqr(runTime().deltaT().value()));
+
+                // Diagonals of the block diagonal 
+                // Coefficient of M in MEqn   
+                matrix(2*i, 2*i) = -lapMDiag[i];
+
+                // Coefficient of w in wEqn
+                matrix(2*i + 1, 2*i + 1) = lapWDiag[i];
+
+                // Off-diagonals of the block diagonal
+                // Coefficient of w in the MEqn
+                matrix(2*i, 2*i + 1) = coeffwMEqn;
+
+                // Coefficient of M in the wEqn
+                matrix(2*i + 1, 2*i) = mag(Sf[i]);
+
+                // Explicit coeffients of the MEqn
+                source[2*i] = p_[i]*mag(Sf[i])
+                    + coeffwMEqn*(2*w_.oldTime()[i] - w_.oldTime().oldTime()[i]); 
+
+            }
+
+            // Off-diagonal components of the block matrix
+            forAll(fam::laplacian(M_)->upper(), faceI)
+            {
+                label i = own[faceI];
+                label j = nei[faceI];
+                
+                // Coefficients of the upper part of the block matrix
+                // Note: There is no neighbour contribution of w in MEqn and M in wEqn 
+                // for rotation-free Kirchhoff plate equations
+                // Neighbour contribution of M in MEqn
+                matrix(2*i, 2*j) = -fam::laplacian(M_)->upper()[i];
+
+                // Neighbour contribution of w in wEqn
+                matrix(2*i + 1, 2*j + 1) = fam::laplacian(bendingStiffness_, w_)->upper()[i];
+
+                // Coefficients of the lower part of the block matrix
+                matrix(2*j, 2*i) = -fam::laplacian(M_)->upper()[i];
+                matrix(2*j + 1, 2*i + 1) = fam::laplacian(bendingStiffness_, w_)->upper()[i];
+            }
+
+            // Loop over boundary patches
+            forAll(M_.boundaryField(), patchI)
+            {
+        
+                // Loop over all faces of boundary patch
+                forAll(M_.boundaryField()[patchI], faceI)
+                {
+                    // Boundary cell index
+                    const label bI = boundaryMesh[patchI].faceCells()[faceI];    
+
+                    // Info<< " bcell " << bCell << " value " 
+                        // << fam::laplacian(M_)->internalCoeffs()[patchI][faceI] << endl;
+
+                    // Contribution of boundary edges to the diagonal of the matrix (MEqn)
+                    matrix(2*bI, 2*bI) -= fam::laplacian(M_)->internalCoeffs()[patchI][faceI];
+
+                    // Contribution of boundary edges to the diagonal of the matrix (wEqn)
+                    matrix(2*bI + 1, 2*bI + 1) += fam::laplacian(bendingStiffness_, w_)->internalCoeffs()[patchI][faceI];
+
+                    // Explicit contribution of boundary edges to the source (MEqn)
+                    source[2*bI] -= fam::laplacian(M_)->boundaryCoeffs()[patchI][faceI];
+
+                    // Explicit contribution of boundary edges to the source (wEqn)
+                    source[2*bI + 1] += fam::laplacian(bendingStiffness_, w_)->boundaryCoeffs()[patchI][faceI];
+                }
+            }
+
+            Info<< "\nscalar data: " << matrix.data() << endl;
+            // Info<< "\nscalar block rows: " << matrix.nBlockRows() << endl;
+
+            Info<< "\nsource: " << source << endl;
+
             //     // Prepare block system
             //     BlockLduSystem<vector2, vector2> blockM(aMesh_);
 
@@ -578,22 +645,115 @@ bool kirchhoffPlateSolid::evolve()
             //     // Insert coupling terms implicitly
             //     to-do
 
-            //     // Solve the linear system
-            //     to-do
+            // Solve the linear system
+            // Use Eigen SparseLU direct solver
+            sparseMatrixTools::solveLinearSystemEigen
+            (
+                matrix, source, solveMw, false, debug
+            );
 
-            //     // Retrieve solution
-            //     to-do
+            Info<< "solveMw\n" << solveMw << endl;
+            // Retrieve solution
+            for(label i = 0; i < nCells; ++i)
+            {
+                M_[i] = solveMw[2*i];
+                w_[i] = solveMw[2*i + 1];
+            }
 
-            //     // Correct the boundary conditions for M and w
-            //     M.correctBoundaryConditions();
-            //     w.correctBoundaryConditions();
-            // }
+            // Correct the boundary conditions for M and w
+            M_.correctBoundaryConditions();
+            w_.correctBoundaryConditions();
+
+            // Update the angle of rotation
+            // theta_ = -fac::grad(w_);
+
+            // Update the gradient of rotation field, used for non-orthogonal
+            // correction in clamped boundary conditions
+            // gradTheta_ = fac::grad(theta_);
         }
-        while
-        (
-            !converged(iCorr, solverPerfM, solverPerfw, M_, w_)
-         && ++iCorr < nCorr()
-        );
+        else
+        {
+            // w and M equation loop
+            do
+            {   
+
+                // Algorithm
+                // Solve M equation
+                // Solve w equation
+                // where
+                // M is the moment sum
+                // w is the transvere (out of plane) displacement
+                // The M equation is:
+                //     rho*h*fac::d2dt2(w) = fam::laplacian(M) + p
+                // and the w equation is:
+                //     fam::laplacian(D, w) + M
+                // where
+                // rho is the density
+                // h is the plate thickness
+                // p is the net transverse pressure
+                // D is the bending stiffness
+                // THESE ARE BOTH SCALARS: IDEA: USE BLOCK COUPLED!
+
+                // Store fields for under-relaxation and residual calculation
+                M_.storePrevIter();
+
+                // Solve M equation
+                // d2dt2 not implemented so calculate it manually using ddt
+                // Also, "==" complains so we will move all terms to left
+                faScalarMatrix MEqn
+                (
+                    rho_*h_
+                *(
+                    fac::ddt(w_) - fac::ddt(w_.oldTime())
+                    )/runTime().deltaT()
+                - fam::laplacian(M_) - p_
+                );
+
+                // Relax the linear system
+                MEqn.relax();
+
+                // Solve the linear system
+                solverPerfM = MEqn.solve();
+
+                // Relax the field
+                M_.relax();
+
+                // Store fields for under-relaxation and residual calculation
+                w_.storePrevIter();
+
+                // Solve w equation
+                faScalarMatrix wEqn
+                (
+                    fam::laplacian(bendingStiffness_, w_) + M_
+                );
+
+                // Relax the linear system
+                wEqn.relax();
+
+                // Solve the linear system
+                solverPerfw = wEqn.solve();
+
+                // Relax the field
+                w_.relax();
+
+                // Update the angle of rotation
+                theta_ = -fac::grad(w_);
+
+                // Update the gradient of rotation field, used for non-orthogonal
+                // correction in clamped boundary conditions
+                gradTheta_ = fac::grad(theta_);         
+            }
+            while
+            (
+                !converged(iCorr, solverPerfM, solverPerfw, M_, w_)
+                && ++iCorr < nCorr()
+            );
+
+        // Info<< "M_\n" << M_ << endl;
+        // Info<< "w_\n" << w_ << endl;
+        }
+        
+
 
         // Map area fields to vol fields
         mapAreaFieldToSingleLayerVolumeField(M_, MVf_);
