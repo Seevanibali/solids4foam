@@ -490,8 +490,28 @@ bool kirchhoffPlateSolid::evolve()
 
         Info<< "Solving the Kirchhoff plate equation for w and M" << endl;
 
+        // Algorithm for rotational-free Kirchhoff plate formulation
+        // The M equation is:
+        //     rho*h*fac::d2dt2(w) = fam::laplacian(M) + p
+        // and the w equation is:
+        //     fam::laplacian(D, w) + M
+        // where
+        // M is the moment sum
+        // w is the transvere (out of plane) displacement
+        // rho is the density
+        // h is the plate thickness
+        // p is the net transverse pressure
+        // D is the bending stiffness
+        // Two approaches for solving the equations implemented here
+        
+        // Approach 1: Block - coupled formulation, Solve M and w equations simulataneously
+        // The equations are linear, so no Newton loop is required, solution 
+        // directly obtained from AX = B
         if (coupled_)
         {
+
+            Info<< "Using implicit block-coupled approach to solve for w and M eqns" << endl;
+
             // Update boundary conditions
             M_.correctBoundaryConditions();
             w_.correctBoundaryConditions();
@@ -504,21 +524,6 @@ bool kirchhoffPlateSolid::evolve()
             // Store boundary mesh information
             const polyBoundaryMesh& boundaryMesh = mesh().boundaryMesh();
 
-            // // Loop over boundary patches
-            // forAll(M_.boundaryField(), patch)
-            // {
-        
-            //     // Loop over all faces of boundary patch
-            //     forAll(M_.boundaryField()[patch], facei)
-            //     {
-            //         const label& bCell = boundaryMesh[patch].faceCells()[facei];    // Boundary cell index
-            //         const label& face = boundaryMesh[patch].start() + facei;        // Face index
-                    
-            //         Info<< " bcell " << bCell << " face " << face << endl;
-            //     }
-            // }
-
-
             // Initialise matrix (2 scalar equations of w and M per cell)
             SparseMatrixTemplate<scalar> matrix(2*nCells);
             
@@ -530,36 +535,49 @@ bool kirchhoffPlateSolid::evolve()
             // Initialise solution field
             scalarField solveMw(2*nCells, 0.0);
 
-            Info<< "Meqn laplacian boundary coeffs " << fam::laplacian(M_)->boundaryCoeffs() << endl;
+            // Read the time scheme from the test case 
+            // WRONG! It is reading from system/fvScehemes, bu we need to read from system/faSchemes
+            // const word ddtSchemeName(mesh().ddtScheme("ddt(w)"));
+
+            // Info<< "ddtScheme used: " << ddtSchemeName << endl;
+
+
+            WarningIn("solidModels/kirchhoffPlateSolid evolve() function ..")
+                << " For the block-coupled approach, implicit first-order Euler is assumed " << nl
+                << " and coeffs of d2dt2(w) are calculated, so even the ddtScheme is steadyState " << nl
+                << " the time derivative coeffs are being added. NEED TO CHANGE THIS!" << nl
+                << endl;
+
             
             // Calculate Laplacian discretisation of M (moment sum)
             const faScalarMatrix laplacianM(fam::laplacian(M_));
             const scalarField& lapMDiag = laplacianM.diag();
-            // const scalarField& lapMUpper = laplacianM.upper();
-            Info<< "lap M int coeffs " << laplacianM.internalCoeffs() << endl;
-            // const scalarField& lapMBouCoeffs = laplacianM.boundaryCoeffs();
+            const scalarField& lapMUpper = laplacianM.upper();
+            // Not sure about the data type of the internal and boundary coeffs, but it seems to be working
+            const FieldField<Foam::Field, scalar>& lapMIntCoeffs = laplacianM.internalCoeffs();
+            const FieldField<Foam::Field, scalar>& lapMBouCoeffs = laplacianM.boundaryCoeffs();
 
             // Calculate Laplacian discretisation of w 
             const faScalarMatrix laplacianW(fam::laplacian(bendingStiffness_, w_));
             const scalarField& lapWDiag = laplacianW.diag();
-            // const scalarField& lapWUpper = laplacianM.upper();
-            // const scalarField& lapWIntCoeffs = laplacianM.internalCoeffs();
-            // const scalarField& lapMBouCoeffs = laplacianM.boundaryCoeffs();
+            const scalarField& lapWUpper = laplacianW.upper();
+            const FieldField<Foam::Field, scalar>& lapWIntCoeffs = laplacianW.internalCoeffs();
+            const FieldField<Foam::Field, scalar>& lapWBouCoeffs = laplacianW.boundaryCoeffs();
 
             // Assembling the diagonal coeffs of MEqn and wEqn into a block matrix
             forAll(lapMDiag, i)
             {
-                // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
-                // Need to change this to second order implicit Euler
-                scalar coeffwMEqn = mag(Sf[i])*rho_.value()
-                    *h_.value()/(sqr(runTime().deltaT().value()));
-
-                // Diagonals of the block diagonal 
+                // Diagonals of the block matrix diagonal 
                 // Coefficient of M in MEqn   
                 matrix(2*i, 2*i) = -lapMDiag[i];
 
                 // Coefficient of w in wEqn
                 matrix(2*i + 1, 2*i + 1) = lapWDiag[i];
+
+                // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
+                // Need to change this to second order implicit Euler
+                scalar coeffwMEqn = mag(Sf[i])*rho_.value()
+                    *h_.value()/(sqr(runTime().deltaT().value()));
 
                 // Off-diagonals of the block diagonal
                 // Coefficient of w in the MEqn
@@ -575,7 +593,7 @@ bool kirchhoffPlateSolid::evolve()
             }
 
             // Off-diagonal components of the block matrix
-            forAll(fam::laplacian(M_)->upper(), faceI)
+            forAll(lapMUpper, faceI)
             {
                 label i = own[faceI];
                 label j = nei[faceI];
@@ -584,14 +602,14 @@ bool kirchhoffPlateSolid::evolve()
                 // Note: There is no neighbour contribution of w in MEqn and M in wEqn 
                 // for rotation-free Kirchhoff plate equations
                 // Neighbour contribution of M in MEqn
-                matrix(2*i, 2*j) = -fam::laplacian(M_)->upper()[i];
+                matrix(2*i, 2*j) = -lapMUpper[i];
 
                 // Neighbour contribution of w in wEqn
-                matrix(2*i + 1, 2*j + 1) = fam::laplacian(bendingStiffness_, w_)->upper()[i];
+                matrix(2*i + 1, 2*j + 1) = lapWUpper[i];
 
                 // Coefficients of the lower part of the block matrix
-                matrix(2*j, 2*i) = -fam::laplacian(M_)->upper()[i];
-                matrix(2*j + 1, 2*i + 1) = fam::laplacian(bendingStiffness_, w_)->upper()[i];
+                matrix(2*j, 2*i) = -lapMUpper[i];
+                matrix(2*j + 1, 2*i + 1) = lapWUpper[i];
             }
 
             // Loop over boundary patches
@@ -608,23 +626,24 @@ bool kirchhoffPlateSolid::evolve()
                         // << fam::laplacian(M_)->internalCoeffs()[patchI][faceI] << endl;
 
                     // Contribution of boundary edges to the diagonal of the matrix (MEqn)
-                    matrix(2*bI, 2*bI) -= fam::laplacian(M_)->internalCoeffs()[patchI][faceI];
+                    matrix(2*bI, 2*bI) -= lapMIntCoeffs[patchI][faceI];
 
                     // Contribution of boundary edges to the diagonal of the matrix (wEqn)
-                    matrix(2*bI + 1, 2*bI + 1) += fam::laplacian(bendingStiffness_, w_)->internalCoeffs()[patchI][faceI];
+                    matrix(2*bI + 1, 2*bI + 1) += lapWIntCoeffs[patchI][faceI];
 
                     // Explicit contribution of boundary edges to the source (MEqn)
-                    source[2*bI] -= fam::laplacian(M_)->boundaryCoeffs()[patchI][faceI];
+                    source[2*bI] -= lapMBouCoeffs[patchI][faceI];
 
                     // Explicit contribution of boundary edges to the source (wEqn)
-                    source[2*bI + 1] += fam::laplacian(bendingStiffness_, w_)->boundaryCoeffs()[patchI][faceI];
+                    source[2*bI + 1] += lapWBouCoeffs[patchI][faceI];
                 }
             }
 
-            Info<< "\nscalar data: " << matrix.data() << endl;
-            // Info<< "\nscalar block rows: " << matrix.nBlockRows() << endl;
-
-            Info<< "\nsource: " << source << endl;
+            if(debug > 1)
+            {
+                Info<< "\nBlock Matrix Coefficients: " << matrix.data() << endl;
+                Info<< "\nSource vector: " << source << endl;
+            }
 
             //     // Prepare block system
             //     BlockLduSystem<vector2, vector2> blockM(aMesh_);
@@ -645,14 +664,15 @@ bool kirchhoffPlateSolid::evolve()
             //     // Insert coupling terms implicitly
             //     to-do
 
-            // Solve the linear system
-            // Use Eigen SparseLU direct solver
+            // Solve the linear system of equations
+            // Using Eigen SparseLU direct solver
             sparseMatrixTools::solveLinearSystemEigen
             (
                 matrix, source, solveMw, false, debug
             );
 
-            Info<< "solveMw\n" << solveMw << endl;
+            //  Info<< "solveMw\n" << solveMw << endl;
+
             // Retrieve solution
             for(label i = 0; i < nCells; ++i)
             {
@@ -665,35 +685,18 @@ bool kirchhoffPlateSolid::evolve()
             w_.correctBoundaryConditions();
 
             // Update the angle of rotation
-            // theta_ = -fac::grad(w_);
+            theta_ = -fac::grad(w_);
 
             // Update the gradient of rotation field, used for non-orthogonal
             // correction in clamped boundary conditions
-            // gradTheta_ = fac::grad(theta_);
+            gradTheta_ = fac::grad(theta_);
         }
         else
         {
-            // w and M equation loop
+            // Approach 2: Using segregated method of solving M and w equations separately 
+            // and then iteratively update them until the values fall below a solution tolerance
             do
-            {   
-
-                // Algorithm
-                // Solve M equation
-                // Solve w equation
-                // where
-                // M is the moment sum
-                // w is the transvere (out of plane) displacement
-                // The M equation is:
-                //     rho*h*fac::d2dt2(w) = fam::laplacian(M) + p
-                // and the w equation is:
-                //     fam::laplacian(D, w) + M
-                // where
-                // rho is the density
-                // h is the plate thickness
-                // p is the net transverse pressure
-                // D is the bending stiffness
-                // THESE ARE BOTH SCALARS: IDEA: USE BLOCK COUPLED!
-
+            { 
                 // Store fields for under-relaxation and residual calculation
                 M_.storePrevIter();
 
@@ -749,12 +752,8 @@ bool kirchhoffPlateSolid::evolve()
                 && ++iCorr < nCorr()
             );
 
-        // Info<< "M_\n" << M_ << endl;
-        // Info<< "w_\n" << w_ << endl;
         }
         
-
-
         // Map area fields to vol fields
         mapAreaFieldToSingleLayerVolumeField(M_, MVf_);
         mapAreaFieldToSingleLayerVolumeField(w_, wVf_);
