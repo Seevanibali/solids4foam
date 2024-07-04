@@ -537,16 +537,34 @@ bool kirchhoffPlateSolid::evolve()
 
             // Read the time scheme from the test case 
             // WRONG! It is reading from system/fvScehemes, bu we need to read from system/faSchemes
-            // const word ddtSchemeName(mesh().ddtScheme("ddt(w)"));
+            // const word ddtSchemeName(mesh().ddtSchemes());
+            
+            // Read ddtSchemes from system/faSchemes
+            const fileName faSchemeFile(runTime().path()/"system");
 
-            // Info<< "ddtScheme used: " << ddtSchemeName << endl;
+            IOdictionary CasefaScheme
+            (
+                IOobject
+                (
+                    "faSchemes",
+                    faSchemeFile,
+                    runTime(),
+                    IOobject::MUST_READ,
+                    IOobject::NO_WRITE,
+                    false // Do not register ? (Not sure what this is?)
+                )
+            );
 
+            const word ddtSchemeName
+            (
+                CasefaScheme.subDict("ddtSchemes").lookup("ddt(w)")
+            );
 
-            WarningIn("solidModels/kirchhoffPlateSolid evolve() function ..")
-                << " For the block-coupled approach, implicit first-order Euler is assumed " << nl
-                << " and coeffs of d2dt2(w) are calculated, so even the ddtScheme is steadyState " << nl
-                << " the time derivative coeffs are being added. NEED TO CHANGE THIS!" << nl
-                << endl;
+            // WarningIn("solidModels/kirchhoffPlateSolid evolve() function ..")
+            //     << " For the block-coupled approach, implicit first-order Euler is assumed " << nl
+            //     << " and coeffs of d2dt2(w) are calculated, so even the ddtScheme is steadyState " << nl
+            //     << " the time derivative coeffs are being added. NEED TO CHANGE THIS!" << nl
+            //     << endl;
 
             
             // Calculate Laplacian discretisation of M (moment sum)
@@ -574,21 +592,37 @@ bool kirchhoffPlateSolid::evolve()
                 // Coefficient of w in wEqn
                 matrix(2*i + 1, 2*i + 1) = lapWDiag[i];
 
-                // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
-                // Need to change this to second order implicit Euler
-                scalar coeffwMEqn = mag(Sf[i])*rho_.value()
-                    *h_.value()/(sqr(runTime().deltaT().value()));
-
                 // Off-diagonals of the block diagonal
-                // Coefficient of w in the MEqn
-                matrix(2*i, 2*i + 1) = coeffwMEqn;
-
                 // Coefficient of M in the wEqn
                 matrix(2*i + 1, 2*i) = mag(Sf[i]);
 
-                // Explicit coeffients of the MEqn
-                source[2*i] = p_[i]*mag(Sf[i])
-                    + coeffwMEqn*(2*w_.oldTime()[i] - w_.oldTime().oldTime()[i]); 
+                // Explicit coeffients of the MEqn go to RHS - source
+                source[2*i] = p_[i]*mag(Sf[i]);
+
+                if(ddtSchemeName == "steadyState")
+                {
+                    // Do nothing
+                }
+                else if(ddtSchemeName == "Euler")
+                {
+                    // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
+                    // Need to change this to second order implicit Euler
+                    scalar coeffwMEqn = mag(Sf[i])*rho_.value()
+                        *h_.value()/(sqr(runTime().deltaT().value()));
+
+                    // Off-diagonals of the block diagonal
+                    // Coefficient of w in the MEqn
+                    matrix(2*i, 2*i + 1) = coeffwMEqn;
+
+                    source[2*i] += coeffwMEqn*(2*w_.oldTime()[i] - w_.oldTime().oldTime()[i]); 
+                }
+                else
+                {
+                    FatalError("evolve() function in kirchhoff plate rotattion-free solid") << nl
+                        << "block-coupled approach is not implemented for the ddtScheme " 
+                        << ddtSchemeName
+                        << abort(FatalError);
+                }
 
             }
 
@@ -690,6 +724,9 @@ bool kirchhoffPlateSolid::evolve()
             // Update the gradient of rotation field, used for non-orthogonal
             // correction in clamped boundary conditions
             gradTheta_ = fac::grad(theta_);
+
+            // Info<< "theta " << theta_ << nl
+            //     << "gradTheta " << gradTheta_ << endl;
         }
         else
         {
@@ -706,10 +743,10 @@ bool kirchhoffPlateSolid::evolve()
                 faScalarMatrix MEqn
                 (
                     rho_*h_
-                *(
-                    fac::ddt(w_) - fac::ddt(w_.oldTime())
+                   *(
+                        fac::ddt(w_) - fac::ddt(w_.oldTime())
                     )/runTime().deltaT()
-                - fam::laplacian(M_) - p_
+                    - fam::laplacian(M_) - p_
                 );
 
                 // Relax the linear system
@@ -744,7 +781,10 @@ bool kirchhoffPlateSolid::evolve()
 
                 // Update the gradient of rotation field, used for non-orthogonal
                 // correction in clamped boundary conditions
-                gradTheta_ = fac::grad(theta_);         
+                gradTheta_ = fac::grad(theta_);
+
+                // Info<< "theta " << theta_ << nl
+                // << "gradTheta " << gradTheta_ << endl;         
             }
             while
             (

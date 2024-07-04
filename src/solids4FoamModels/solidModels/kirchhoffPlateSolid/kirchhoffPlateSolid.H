@@ -25,6 +25,7 @@ Description
 
 Author
     Philip Cardiff, UCD.  All rights reserved.
+    Block-coupled approach added by Seevani Bali, UCD.
 
 SourceFiles
     kirchhoffPlateSolid.C
