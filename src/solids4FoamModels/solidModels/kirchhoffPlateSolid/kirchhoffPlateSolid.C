@@ -434,7 +434,7 @@ kirchhoffPlateSolid::kirchhoffPlateSolid
     bendingStiffness_("zero", dimPressure*dimVolume, 0.0),
     areaPatchID_(-1),
     areaShadowPatchID_(-1),
-    coupled_(solidModelDict().lookupOrDefault<bool>("coupled", false))
+    coupled_(solidModelDict().getOrDefault<bool>("coupled", true))
 {
     const PtrList<mechanicalLaw>& mechLaws = mechanical();
 
@@ -490,6 +490,36 @@ bool kirchhoffPlateSolid::evolve()
 
         Info<< "Solving the Kirchhoff plate equation for w and M" << endl;
 
+        // Read the time scheme from the test case 
+        // WRONG! It is reading from system/fvScehemes, bu we need to read from system/faSchemes
+        // const word ddtSchemeName(mesh().ddtSchemes());
+        // Read ddtScheme name from system/faSchemes
+        const bool ddtScheme(aMesh_.ddtSchemes().found("ddt(w)"));
+        const word ddtSchemeName
+        (
+            ddtScheme
+            ?
+            (aMesh_.ddtSchemes().lookup("ddt(w)"))
+            :
+            (aMesh_.ddtSchemes().lookup("default"))
+        );
+
+        // Read d2dt2Scheme name from system/faSchemes
+        const bool d2dt2Scheme(aMesh_.d2dt2Schemes().found("d2dt2(w)"));
+        const word d2dt2SchemeName
+        (
+            d2dt2Scheme
+            ?
+            (aMesh_.d2dt2Schemes().lookup("d2dt2(w)"))
+            :
+            (aMesh_.d2dt2Schemes().lookup("default"))
+        );
+
+        WarningIn("evolve() function in kirchhoff plate rotation-free solid")<< nl 
+            << "d2dt2Scheme in system/faSchemes cannot take steadyState as a valid keyword!" << nl 
+            << "If you want plate-case to be solved for steady state condition, "
+            << "set ddtScheme to be steadyState instead!! " << endl;
+
         // Algorithm for rotational-free Kirchhoff plate formulation
         // The M equation is:
         //     rho*h*fac::d2dt2(w) = fam::laplacian(M) + p
@@ -510,21 +540,20 @@ bool kirchhoffPlateSolid::evolve()
         if (coupled_)
         {
 
-            Info<< "Using implicit block-coupled approach to solve for w and M eqns" << endl;
+            Info<< "\nUsing implicit block-coupled approach to solve for w and M eqns" << endl;
 
             // Update boundary conditions
             M_.correctBoundaryConditions();
             w_.correctBoundaryConditions();
 
-            const label nCells = mesh().nCells();
-            const labelList& own = mesh().owner();
-            const labelList& nei = mesh().neighbour();
-            const vectorField& Sf = mesh().faceAreas();
+            const label nCells(aMesh_.faceCells().size());
+            const labelList& own(aMesh_.owner());
+            const labelList& nei(aMesh_.neighbour());
+            const DimensionedField<scalar, areaMesh>& Sf(aMesh_.S());
+            const edgeScalarField& le(aMesh_.magLe());
+            const faBoundaryMesh& faBouMesh(aMesh_.boundary());
 
-            // Store boundary mesh information
-            const polyBoundaryMesh& boundaryMesh = mesh().boundaryMesh();
-
-            // Initialise matrix (2 scalar equations of w and M per cell)
+            // Initialise block matrix (2 scalar equations of w and M per cell)
             SparseMatrixTemplate<scalar> matrix(2*nCells);
             
             matrix.clear();
@@ -535,59 +564,34 @@ bool kirchhoffPlateSolid::evolve()
             // Initialise solution field
             scalarField solveMw(2*nCells, 0.0);
 
-            // Read the time scheme from the test case 
-            // WRONG! It is reading from system/fvScehemes, bu we need to read from system/faSchemes
-            // const word ddtSchemeName(mesh().ddtSchemes());
-            
-            // Read ddtSchemes from system/faSchemes
-            const fileName faSchemeFile(runTime().path()/"system");
-
-            IOdictionary CasefaScheme
-            (
-                IOobject
-                (
-                    "faSchemes",
-                    faSchemeFile,
-                    runTime(),
-                    IOobject::MUST_READ,
-                    IOobject::NO_WRITE,
-                    false // Do not register ? (Not sure what this is?)
-                )
-            );
-
-            const word ddtSchemeName
-            (
-                CasefaScheme.subDict("ddtSchemes").lookup("ddt(w)")
-            );
-
-            // WarningIn("solidModels/kirchhoffPlateSolid evolve() function ..")
-            //     << " For the block-coupled approach, implicit first-order Euler is assumed " << nl
-            //     << " and coeffs of d2dt2(w) are calculated, so even the ddtScheme is steadyState " << nl
-            //     << " the time derivative coeffs are being added. NEED TO CHANGE THIS!" << nl
-            //     << endl;
-
+            // d2dt2 term
+            // Note: when running a case, it says available d2dt2 schemes are only Euler,
+            // When the test case is steadyState, read ddtScheme to be steadyState and inertial
+            // terms of d2dt2(w) are not added to the matrix.
+            const faScalarMatrix d2dt2W(rho_*h_*fam::d2dt2(w_));
+            const scalarField& d2dt2WDiag = d2dt2W.diag();
+            const scalarField& d2dt2WSource = d2dt2W.source();
             
             // Calculate Laplacian discretisation of M (moment sum)
-            const faScalarMatrix laplacianM(fam::laplacian(M_));
+            const faScalarMatrix laplacianM(-fam::laplacian(M_));
             const scalarField& lapMDiag = laplacianM.diag();
             const scalarField& lapMUpper = laplacianM.upper();
-            // Not sure about the data type of the internal and boundary coeffs, but it seems to be working
-            const FieldField<Foam::Field, scalar>& lapMIntCoeffs = laplacianM.internalCoeffs();
-            const FieldField<Foam::Field, scalar>& lapMBouCoeffs = laplacianM.boundaryCoeffs();
+            const FieldField<Field, scalar>& lapMIntCoeffs = laplacianM.internalCoeffs();
+            const FieldField<Field, scalar>& lapMBouCoeffs = laplacianM.boundaryCoeffs();
 
             // Calculate Laplacian discretisation of w 
             const faScalarMatrix laplacianW(fam::laplacian(bendingStiffness_, w_));
             const scalarField& lapWDiag = laplacianW.diag();
             const scalarField& lapWUpper = laplacianW.upper();
-            const FieldField<Foam::Field, scalar>& lapWIntCoeffs = laplacianW.internalCoeffs();
-            const FieldField<Foam::Field, scalar>& lapWBouCoeffs = laplacianW.boundaryCoeffs();
+            const FieldField<Field, scalar>& lapWIntCoeffs = laplacianW.internalCoeffs();
+            const FieldField<Field, scalar>& lapWBouCoeffs = laplacianW.boundaryCoeffs();
 
             // Assembling the diagonal coeffs of MEqn and wEqn into a block matrix
             forAll(lapMDiag, i)
             {
                 // Diagonals of the block matrix diagonal 
                 // Coefficient of M in MEqn   
-                matrix(2*i, 2*i) = -lapMDiag[i];
+                matrix(2*i, 2*i) = lapMDiag[i];
 
                 // Coefficient of w in wEqn
                 matrix(2*i + 1, 2*i + 1) = lapWDiag[i];
@@ -599,28 +603,33 @@ bool kirchhoffPlateSolid::evolve()
                 // Explicit coeffients of the MEqn go to RHS - source
                 source[2*i] = p_[i]*mag(Sf[i]);
 
+                // // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
+                //     // Need to change this to second order implicit Euler
+                //     scalar coeffwMEqn = mag(Sf[i])*rho_.value()
+                //         *h_.value()/(sqr(runTime().deltaT().value()));
+
+                //     // Off-diagonals of the block diagonal
+                //     // Coefficient of w in the MEqn
+                //     matrix(2*i, 2*i + 1) = coeffwMEqn;
+
+                //     source[2*i] += coeffwMEqn*(2*w_.oldTime()[i] - w_.oldTime().oldTime()[i]); 
+
+                // Add d2dt2 coeffs
                 if(ddtSchemeName == "steadyState")
                 {
-                    // Do nothing
+                    // Do not add any inertial contribution for d2dt2 terms
                 }
-                else if(ddtSchemeName == "Euler")
+                else if(ddtSchemeName != "steadyState" && d2dt2SchemeName == "Euler")
                 {
-                    // Here it is assumed that the d2dt2 scheme is first-order Implicit Euler
-                    // Need to change this to second order implicit Euler
-                    scalar coeffwMEqn = mag(Sf[i])*rho_.value()
-                        *h_.value()/(sqr(runTime().deltaT().value()));
+                    matrix(2*i, 2*i + 1) = d2dt2WDiag[i];
 
-                    // Off-diagonals of the block diagonal
-                    // Coefficient of w in the MEqn
-                    matrix(2*i, 2*i + 1) = coeffwMEqn;
-
-                    source[2*i] += coeffwMEqn*(2*w_.oldTime()[i] - w_.oldTime().oldTime()[i]); 
+                    source[2*i] += d2dt2WSource[i];
                 }
                 else
                 {
                     FatalError("evolve() function in kirchhoff plate rotattion-free solid") << nl
-                        << "block-coupled approach is not implemented for the ddtScheme " 
-                        << ddtSchemeName
+                        << "Incompatible (or not defined) d2dt2Scheme " 
+                        << d2dt2SchemeName << " is specified! "
                         << abort(FatalError);
                 }
 
@@ -636,40 +645,62 @@ bool kirchhoffPlateSolid::evolve()
                 // Note: There is no neighbour contribution of w in MEqn and M in wEqn 
                 // for rotation-free Kirchhoff plate equations
                 // Neighbour contribution of M in MEqn
-                matrix(2*i, 2*j) = -lapMUpper[i];
+                matrix(2*i, 2*j) = lapMUpper[i];
 
                 // Neighbour contribution of w in wEqn
                 matrix(2*i + 1, 2*j + 1) = lapWUpper[i];
 
                 // Coefficients of the lower part of the block matrix
-                matrix(2*j, 2*i) = -lapMUpper[i];
+                matrix(2*j, 2*i) = lapMUpper[i];
                 matrix(2*j + 1, 2*i + 1) = lapWUpper[i];
             }
 
             // Loop over boundary patches
             forAll(M_.boundaryField(), patchI)
             {
-        
+                const word& patchTypeM(M_.boundaryField()[patchI].type());
+                const List<scalar>& delta(aMesh_.boundary()[patchI].deltaCoeffs());
+
                 // Loop over all faces of boundary patch
                 forAll(M_.boundaryField()[patchI], faceI)
                 {
                     // Boundary cell index
-                    const label bI = boundaryMesh[patchI].faceCells()[faceI];    
+                    const label bI = faBouMesh[patchI].edgeFaces()[faceI];
+                    const scalar leB = le.boundaryField()[patchI][faceI];
+                    const scalar delB = delta[faceI];
 
-                    // Info<< " bcell " << bCell << " value " 
-                        // << fam::laplacian(M_)->internalCoeffs()[patchI][faceI] << endl;
+                    if(patchTypeM == "clampedMoment")
+                    {
+                        // Coefficients of w in MEqn due to boundary coupling
+                        // This implict coefficient is only considering an orthogonal mesh
+                        // For non-orthogonal mesh, correction terms has to be added explicitly
+                        // So an iterative loop is needed.
+                        const scalar coeffBouW(-2*leB*bendingStiffness_.value()*pow(delB,3));
+                        const scalar explicitW(w_.boundaryField()[patchI][faceI]);
+                        
+                        // Diagonal contribution for BC to M_ of the matrix in MEqn
+                        matrix(2*bI, 2*bI) += lapMIntCoeffs[patchI][faceI];
 
-                    // Contribution of boundary edges to the diagonal of the matrix (MEqn)
-                    matrix(2*bI, 2*bI) -= lapMIntCoeffs[patchI][faceI];
+                        // Diagonal contribution for BC to w_ of the matrix in MEqn
+                        matrix(2*bI, 2*bI + 1) += coeffBouW;
 
-                    // Contribution of boundary edges to the diagonal of the matrix (wEqn)
-                    matrix(2*bI + 1, 2*bI + 1) += lapWIntCoeffs[patchI][faceI];
+                        // Explicit contribution of boundary edges to the source (MEqn)
+                        source[2*bI] -= coeffBouW*explicitW;                 
+                    }
+                    else
+                    {
+                        // Contribution of boundary edges to the diagonal of the matrix (MEqn)
+                        matrix(2*bI, 2*bI) += lapMIntCoeffs[patchI][faceI];
 
-                    // Explicit contribution of boundary edges to the source (MEqn)
-                    source[2*bI] -= lapMBouCoeffs[patchI][faceI];
+                        // Explicit contribution of boundary edges to the source (MEqn)
+                        source[2*bI] += lapMBouCoeffs[patchI][faceI];
 
-                    // Explicit contribution of boundary edges to the source (wEqn)
-                    source[2*bI + 1] += lapWBouCoeffs[patchI][faceI];
+                        // Contribution of boundary edges to the diagonal of the matrix (wEqn)
+                        matrix(2*bI + 1, 2*bI + 1) += lapWIntCoeffs[patchI][faceI];
+
+                        // Explicit contribution of boundary edges to the source (wEqn)
+                        source[2*bI + 1] += lapWBouCoeffs[patchI][faceI];
+                    }   
                 }
             }
 
@@ -679,33 +710,12 @@ bool kirchhoffPlateSolid::evolve()
                 Info<< "\nSource vector: " << source << endl;
             }
 
-            //     // Prepare block system
-            //     BlockLduSystem<vector2, vector2> blockM(aMesh_);
-
-            //     // Grab block diagonal and set it to zero
-            //     Field<tensor2>& d = blockM.diag().asSquare();
-            //     d = tensor2::zero;
-
-            //     // Grab linear off-diagonal and set it to zero
-            //     Field<vector2>& l = blockM.lower().asLinear();
-            //     Field<vector2>& u = blockM.upper().asLinear();
-            //     u = vector2::zero;
-            //     l = vector2::zero;
-
-            //     // Insert MEqn and wEqn (without coupling terms)
-            //     to-do
-
-            //     // Insert coupling terms implicitly
-            //     to-do
-
             // Solve the linear system of equations
             // Using Eigen SparseLU direct solver
             sparseMatrixTools::solveLinearSystemEigen
             (
                 matrix, source, solveMw, false, debug
             );
-
-            //  Info<< "solveMw\n" << solveMw << endl;
 
             // Retrieve solution
             for(label i = 0; i < nCells; ++i)
@@ -724,14 +734,15 @@ bool kirchhoffPlateSolid::evolve()
             // Update the gradient of rotation field, used for non-orthogonal
             // correction in clamped boundary conditions
             gradTheta_ = fac::grad(theta_);
-
-            // Info<< "theta " << theta_ << nl
-            //     << "gradTheta " << gradTheta_ << endl;
         }
         else
         {
             // Approach 2: Using segregated method of solving M and w equations separately 
             // and then iteratively update them until the values fall below a solution tolerance
+
+            Info<< "\nUsing segregated approach to solve for w & M eqns " 
+                << "separately and iteratively update them!" << endl;
+
             do
             { 
                 // Store fields for under-relaxation and residual calculation
@@ -740,14 +751,29 @@ bool kirchhoffPlateSolid::evolve()
                 // Solve M equation
                 // d2dt2 not implemented so calculate it manually using ddt
                 // Also, "==" complains so we will move all terms to left
+                // faScalarMatrix MEqn
+                // (
+                //     rho_*h_
+                //    *(
+                //         fac::ddt(w_) - fac::ddt(w_.oldTime())
+                //     )/runTime().deltaT()
+                //     - fam::laplacian(M_) - p_
+                // );
+
+                // Solve M equation
                 faScalarMatrix MEqn
                 (
-                    rho_*h_
-                   *(
-                        fac::ddt(w_) - fac::ddt(w_.oldTime())
-                    )/runTime().deltaT()
+                    rho_*h_*(fac::d2dt2(w_))
                     - fam::laplacian(M_) - p_
                 );
+
+                // d2dt2 can only take Euler as keyword, but if the user wants it to
+                // be steadyState, it cannot happen. Hence check for ddtScheme 
+                // and remove inertial terms for steady state!!
+                if(ddtSchemeName == "steadyState")
+                {
+                    MEqn -= rho_*h_*(fac::d2dt2(w_));
+                }
 
                 // Relax the linear system
                 MEqn.relax();
