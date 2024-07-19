@@ -763,16 +763,15 @@ bool kirchhoffPlateSolid::evolve()
                 // Solve M equation
                 faScalarMatrix MEqn
                 (
-                    rho_*h_*(fac::d2dt2(w_))
                     - fam::laplacian(M_) - p_
                 );
 
                 // d2dt2 can only take Euler as keyword, but if the user wants it to
                 // be steadyState, it cannot happen. Hence check for ddtScheme 
                 // and remove inertial terms for steady state!!
-                if(ddtSchemeName == "steadyState")
+                if(ddtSchemeName != "steadyState")
                 {
-                    MEqn -= rho_*h_*(fac::d2dt2(w_));
+                    MEqn += rho_*h_*(fac::d2dt2(w_));
                 }
 
                 // Relax the linear system
