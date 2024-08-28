@@ -407,7 +407,7 @@ kirchhoffPlateSolid::kirchhoffPlateSolid
             "theta",
             runTime.timeName(),
             mesh(),
-            IOobject::NO_READ,
+            IOobject::READ_IF_PRESENT,
             IOobject::AUTO_WRITE
         ),
         aMesh_,
@@ -534,6 +534,8 @@ bool kirchhoffPlateSolid::evolve()
         // D is the bending stiffness
         // Two approaches for solving the equations implemented here
         
+        theta_.storePrevIter();
+
         // Approach 1: Block - coupled formulation, Solve M and w equations simulataneously
         // The equations are linear, so no Newton loop is required, solution 
         // directly obtained from AX = B
@@ -785,7 +787,7 @@ bool kirchhoffPlateSolid::evolve()
 
                 // Store fields for under-relaxation and residual calculation
                 w_.storePrevIter();
-
+                
                 // Solve w equation
                 faScalarMatrix wEqn
                 (
@@ -808,7 +810,7 @@ bool kirchhoffPlateSolid::evolve()
                 // correction in clamped boundary conditions
                 gradTheta_ = fac::grad(theta_);
 
-                // Info<< "theta " << theta_ << nl
+                // Info<< "theta " << theta_ << nl << endl;
                 // << "gradTheta " << gradTheta_ << endl;         
             }
             while

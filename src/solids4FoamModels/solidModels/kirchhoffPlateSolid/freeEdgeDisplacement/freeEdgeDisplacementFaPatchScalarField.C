@@ -110,26 +110,52 @@ void Foam::freeEdgeDisplacementFaPatchScalarField::updateCoeffs()
     }
 
     // Info<< nl << "------------------------------------------" << nl << endl;
+    // Lookup angle of rotation field
+    const faPatchField<vector>& theta =
+        patch().lookupPatchField<areaVectorField, vector>("theta");
+
+    // Lookup the gradient of rotation field
+    const faPatchField<tensor>& gradTheta =
+        patch().lookupPatchField<areaTensorField, tensor>("grad(theta)");
+
+    // Calculate correction vectors
+    const vectorField n(patch().edgeNormals());
+    const vectorField delta(patch().delta());
+    const vectorField k((I - sqr(n)) & delta);
+
+    // Calculate the patch internal field and correction for non-orthogonality
+    const scalarField nDotThetaPif
+    (
+        n & (theta.patchInternalField() + (k & gradTheta.patchInternalField()))
+    );
 
     // Lookup angle of rotation field
     // const faPatchField<vector>& theta =
     //     patch().lookupPatchField<areaVectorField, vector>("theta");
 
+    // if (!db().foundObject<areaVectorField>("thetaPrevIter"))
+    // {
+    //     Info<< "theta pre iter not found " << endl;
+    //     return;
+    // }
+    
+    // Lookup angle of rotation field
+    // const faPatchField<vector>& thetaPrevIter =
+    //     patch().lookupPatchField<areaVectorField, vector>("thetaPrevIter");
+
     // Lookup the gradient of rotation field
     // const faPatchField<tensor>& gradTheta =
     //     patch().lookupPatchField<areaTensorField, tensor>("grad(theta)");
 
-    // Calculate correction vectors
-    // const vectorField n = patch().edgeNormals();
+    // // Calculate correction vectors
+    // const vectorField n(patch().edgeNormals());
     // const vectorField delta(patch().delta());
     // const vectorField k = (I - sqr(n)) & delta;
 
-    // Calculate the patch internal field and correction for non-orthogonality
+    // // Calculate the patch internal field and correction for non-orthogonality
     // const scalarField nDotThetaPif =
     //  n & (theta.patchInternalField() + (k & gradTheta.patchInternalField()));
 
-    // Info<< "theta: "
-    //     << vectorField(theta) << nl << endl;
     // Info<< "theta pif: "
     //     << (theta.patchInternalField()) << nl << endl;
 
@@ -139,6 +165,21 @@ void Foam::freeEdgeDisplacementFaPatchScalarField::updateCoeffs()
     // Lookup moment sum field
     const faPatchField<scalar>& M =
         patch().lookupPatchField<areaScalarField, scalar>("M");
+
+    const faPatchField<scalar>& MPrevIter =
+        patch().lookupPatchField<areaScalarField, scalar>("MPrevIter");
+
+    // // Lookup w field
+    // const faPatchField<scalar>& w =
+    //     patch().lookupPatchField<areaScalarField, scalar>("w");
+
+    // const faPatchField<scalar>& wPrevIter =
+    //     patch().lookupPatchField<areaScalarField, scalar>("wPrevIter");
+
+    // Info<< "theta: " 
+    //     << vectorField(theta) 
+    //     << nl << endl;
+
 
     // Lookup fvMesh
     // Fix for FSI: this is only correct for
@@ -165,10 +206,30 @@ void Foam::freeEdgeDisplacementFaPatchScalarField::updateCoeffs()
     const scalar nu = plateSolid.nu().value();
 
     // Update the gradient
-    gradient() +=
-        relaxFac_*(1.0 + nu)*M/(D*(1.0 - pow(nu, 2))*patch().deltaCoeffs());
+    // gradient() +=
+    //     relaxFac_*(1.0 + nu)*M/(D*(1.0 - pow(nu, 2))*patch().deltaCoeffs());
 
-    // Info<< "prev gradient(): " << gradient() << nl << endl;
+    // Info<< "n: " << n << nl << endl;
+    // Info<< "delta: " << delta << nl << endl;
+
+    gradient() = (n & theta)
+                 // + (1.0 - relaxFac_)*(n & thetaPrevIter) 
+                + M*nu/(2*D*(1.0 - pow(nu,2))*(n & delta));
+                // + (1.0 - relaxFac_)*MPrevIter*nu/(2*D*(1.0 - nu)*(n & delta));
+
+    // Info<< "g aft: " << gradient() << nl << endl;         
+    //  gradient() =  relaxFac_*(n & -theta.patchInternalField())
+    //             + (1.0 - relaxFac_)*(n & -thetaPrevIter.patchInternalField())
+    //             + relaxFac_*M*nu/(2*D*(1 - nu)*mag(delta))
+    //             + (1.0 - relaxFac_)*MPrevIter*nu/(2*D*(1 - nu)*mag(delta));
+
+    // gradient() = relaxFac_
+    //             *(
+    //                 (n & -theta.patchInternalField()) + M*nu/(2*D*(1 - nu)*mag(delta))
+    //              )
+    //             + (1.0 - relaxFac_)*gradient();
+
+    // Info<< "gradient: " << gradient() << nl << endl;
 
     // gradient() =
     //     relaxFac_
