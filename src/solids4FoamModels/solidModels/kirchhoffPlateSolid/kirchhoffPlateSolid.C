@@ -373,7 +373,7 @@ kirchhoffPlateSolid::kirchhoffPlateSolid
             IOobject::AUTO_WRITE
         ),
         mesh(),
-        dimensionedScalar("zero", dimPressure/dimArea, 0.0)
+        dimensionedScalar("zero", dimPressure*dimArea, 0.0)
     ),
     p_
     (
