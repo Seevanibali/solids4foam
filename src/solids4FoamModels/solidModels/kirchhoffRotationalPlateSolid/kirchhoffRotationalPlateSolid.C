@@ -531,7 +531,7 @@ kirchhoffRotationalPlateSolid::kirchhoffRotationalPlateSolid
             runTime.timeName(),
             mesh(),
             IOobject::NO_READ,
-            IOobject::NO_WRITE
+            IOobject::AUTO_WRITE
         ),
         aMesh_,
         dimensionedVector("zero", dimForce, vector::zero)
@@ -653,539 +653,366 @@ bool kirchhoffRotationalPlateSolid::evolve()
         gradThetaX_.storePrevIter();
         gradThetaY_.storePrevIter();
 
-        // Approach: Block - coupled formulation to Solve M, thetaX, thetaY and w equations
-        // equations simulataneously
-        // Iterative approach because the source vector values come from the previous iteration 
-        // if (coupled_)
-        // {
-            
-        //     Info<< "\nUsing block-coupled approach to solve for w, thetaX, thetaY, and M eqns" << endl;
-
-        //     // Update boundary conditions
-        //     M_.correctBoundaryConditions();
-        //     w_.correctBoundaryConditions();
-        //     thetaX_.correctBoundaryConditions();
-        //     thetaY_.correctBoundaryConditions();
-
-        //     const label nCells(aMesh_.faceCells().size());
-        //     const labelList& own(aMesh_.owner());
-        //     const labelList& nei(aMesh_.neighbour());
-        //     const DimensionedField<scalar, areaMesh>& Sf(aMesh_.S());
-        //     const edgeScalarField& le(aMesh_.magLe());
-        //     const faBoundaryMesh& faBouMesh(aMesh_.boundary());
-
-        //     // Initialise block matrix (2 scalar equations of w and M per cell)
-        //     SparseMatrixTemplate<scalar> matrix(2*nCells);
-            
-        //     matrix.clear();
-
-        //     // Initialise source vector
-        //     scalarField source(2*nCells, 0.0);
-            
-        //     // Initialise solution field
-        //     scalarField solveMw(2*nCells, 0.0);
-
-        //     // d2dt2 term
-        //     // Note: when running a case, it says available d2dt2 schemes are only Euler,
-        //     // When the test case is steadyState, read ddtScheme to be steadyState and inertial
-        //     // terms of d2dt2(w) are not added to the matrix.
-        //     const faScalarMatrix d2dt2W(rho_*h_*fam::d2dt2(w_));
-        //     const scalarField& d2dt2WDiag = d2dt2W.diag();
-        //     const scalarField& d2dt2WSource = d2dt2W.source();
-            
-        //     // Calculate Laplacian discretisation of M (moment sum)
-        //     const faScalarMatrix laplacianM(-fam::laplacian(M_));
-        //     const scalarField& lapMDiag = laplacianM.diag();
-        //     const scalarField& lapMUpper = laplacianM.upper();
-        //     const FieldField<Field, scalar>& lapMIntCoeffs = laplacianM.internalCoeffs();
-        //     const FieldField<Field, scalar>& lapMBouCoeffs = laplacianM.boundaryCoeffs();
-
-        //     // Calculate Laplacian discretisation of w 
-        //     const faScalarMatrix laplacianW(fam::laplacian(bendingStiffness_, w_));
-        //     const scalarField& lapWDiag = laplacianW.diag();
-        //     const scalarField& lapWUpper = laplacianW.upper();
-        //     const FieldField<Field, scalar>& lapWIntCoeffs = laplacianW.internalCoeffs();
-        //     const FieldField<Field, scalar>& lapWBouCoeffs = laplacianW.boundaryCoeffs();
-
-        //     // Assembling the diagonal coeffs of MEqn and wEqn into a block matrix
-        //     forAll(lapMDiag, i)
-        //     {
-        //         // Diagonals of the block matrix diagonal 
-        //         // Coefficient of M in MEqn   
-        //         matrix(2*i, 2*i) = lapMDiag[i];
-
-        //         // Coefficient of w in wEqn
-        //         matrix(2*i + 1, 2*i + 1) = lapWDiag[i];
-
-        //         // Off-diagonals of the block diagonal
-        //         // Coefficient of M in the wEqn
-        //         matrix(2*i + 1, 2*i) = mag(Sf[i]);
-
-        //         // Explicit coeffients of the MEqn go to RHS - source
-        //         source[2*i] = p_[i]*mag(Sf[i]);
-
-        //         // Add d2dt2 coeffs
-        //         if(ddtSchemeName == "steadyState")
-        //         {
-        //             // Do not add any inertial contribution for d2dt2 terms
-        //         }
-        //         else if(ddtSchemeName != "steadyState" && d2dt2SchemeName == "Euler")
-        //         {
-        //             matrix(2*i, 2*i + 1) = d2dt2WDiag[i];
-
-        //             source[2*i] += d2dt2WSource[i];
-        //         }
-        //         else
-        //         {
-        //             FatalError("evolve() function in kirchhoff plate rotattion-free solid") << nl
-        //                 << "Incompatible (or not defined) d2dt2Scheme " 
-        //                 << d2dt2SchemeName << " is specified! "
-        //                 << abort(FatalError);
-        //         }
-
-        //     }
-
-        //     // Off-diagonal components of the block matrix
-        //     forAll(lapMUpper, faceI)
-        //     {
-        //         label i = own[faceI];
-        //         label j = nei[faceI];
-                
-        //         // Coefficients of the upper part of the block matrix
-        //         // Note: There is no neighbour contribution of w in MEqn and M in wEqn 
-        //         // for rotation-free Kirchhoff plate equations
-        //         // Neighbour contribution of M in MEqn
-        //         matrix(2*i, 2*j) = lapMUpper[i];
-
-        //         // Neighbour contribution of w in wEqn
-        //         matrix(2*i + 1, 2*j + 1) = lapWUpper[i];
-
-        //         // Coefficients of the lower part of the block matrix
-        //         matrix(2*j, 2*i) = lapMUpper[i];
-        //         matrix(2*j + 1, 2*i + 1) = lapWUpper[i];
-        //     }
-
-        //     // Loop over boundary patches
-        //     forAll(M_.boundaryField(), patchI)
-        //     {
-        //         const word& patchTypeM(M_.boundaryField()[patchI].type());
-        //         const List<scalar>& delta(aMesh_.boundary()[patchI].deltaCoeffs());
-
-        //         // Loop over all faces of boundary patch
-        //         forAll(M_.boundaryField()[patchI], faceI)
-        //         {
-        //             // Boundary cell index
-        //             const label bI = faBouMesh[patchI].edgeFaces()[faceI];
-        //             const scalar leB = le.boundaryField()[patchI][faceI];
-        //             const scalar delB = delta[faceI];
-
-        //             if(patchTypeM == "clampedMoment")
-        //             {
-        //                 // Coefficients of w in MEqn due to boundary coupling
-        //                 // This implict coefficient is only considering an orthogonal mesh
-        //                 // For non-orthogonal mesh, correction terms has to be added explicitly
-        //                 // So an iterative loop is needed.
-        //                 const scalar coeffBouW(-2*leB*bendingStiffness_.value()*pow(delB,3));
-        //                 const scalar explicitW(w_.boundaryField()[patchI][faceI]);
-                        
-        //                 // Diagonal contribution for BC to M_ of the matrix in MEqn
-        //                 matrix(2*bI, 2*bI) += lapMIntCoeffs[patchI][faceI];
-
-        //                 // Diagonal contribution for BC to w_ of the matrix in MEqn
-        //                 matrix(2*bI, 2*bI + 1) += coeffBouW;
-
-        //                 // Explicit contribution of boundary edges to the source (MEqn)
-        //                 source[2*bI] -= coeffBouW*explicitW;                 
-        //             }
-        //             else
-        //             {
-        //                 // Contribution of boundary edges to the diagonal of the matrix (MEqn)
-        //                 matrix(2*bI, 2*bI) += lapMIntCoeffs[patchI][faceI];
-
-        //                 // Explicit contribution of boundary edges to the source (MEqn)
-        //                 source[2*bI] += lapMBouCoeffs[patchI][faceI];
-
-        //                 // Contribution of boundary edges to the diagonal of the matrix (wEqn)
-        //                 matrix(2*bI + 1, 2*bI + 1) += lapWIntCoeffs[patchI][faceI];
-
-        //                 // Explicit contribution of boundary edges to the source (wEqn)
-        //                 source[2*bI + 1] += lapWBouCoeffs[patchI][faceI];
-        //             }   
-        //         }
-        //     }
-
-        //     if(debug > 1)
-        //     {
-        //         Info<< "\nBlock Matrix Coefficients: " << matrix.data() << endl;
-        //         Info<< "\nSource vector: " << source << endl;
-        //     }
-
-        //     // Solve the linear system of equations
-        //     // Using Eigen SparseLU direct solver
-        //     sparseMatrixTools::solveLinearSystemEigen
-        //     (
-        //         matrix, source, solveMw, false, debug
-        //     );
-
-        //     // Retrieve solution
-        //     for(label i = 0; i < nCells; ++i)
-        //     {
-        //         M_[i] = solveMw[2*i];
-        //         w_[i] = solveMw[2*i + 1];
-        //     }
-
-        //     // Correct the boundary conditions for M and w
-        //     M_.correctBoundaryConditions();
-        //     w_.correctBoundaryConditions();
-        //     thetaX_.correctBoundaryConditions();
-        //     thetaY_.correctBoundaryConditions();
-
-        //     // Update the angle of rotation
-        //     vectorField theta(-fac::grad(w_));
-        //     // thetaX_(theta.component(0));
-        //     // thetaY_(theta.component(1));
-
-        //     // Update the gradient of rotation field, used for non-orthogonal
-        //     // correction in clamped boundary conditions
-        //     // gradTheta_ = fac::grad(theta_);
-        // }
-        // else
-        // {
-            // Approach 2: Using segregated method of solving M and w equations separately 
-            // and then iteratively update them until the values fall below a solution tolerance
-
-            Info<< "\nUsing segregated approach to solve for w & M eqns " 
-                << "separately and iteratively update them!" << endl;
-
-            do
-            { 
-                // Store fields for under-relaxation and residual calculation
-                M_.storePrevIter();
-
-                // Solve M equation
-                // Also, "==" complains so we will move all terms to left
-                faScalarMatrix MEqn
-                (
-                    - fam::laplacian(M_) - p_
-                );
-
-                // d2dt2 can only take Euler as keyword, but if the user wants it to
-                // be steadyState, it cannot happen. Hence check for ddtScheme 
-                // and add inertial terms for not steady state!!
-                if(ddtSchemeName != "steadyState")
-                {
-                    MEqn += rho_*h_*(fac::d2dt2(w_));
-                }
-
-                // Relax the linear system
-                MEqn.relax();
-
-                // Solve the linear system
-                solverPerfM = MEqn.solve();
-
-                // Relax the field
-                M_.relax();
-
-                // Update the gradient of moment sum
-                gradM_ = fac::grad(M_);
-
-                // Access the cell centre position vectors of the mesh
-                const areaVectorField& positionR(aMesh_.areaCentres());
-
-                scalarField& gradThXXI(gradThXX_.ref());
-                scalarField& gradThXYI(gradThXY_.ref());
-                scalarField& gradThYXI(gradThYX_.ref());
-                scalarField& gradThYYI(gradThYY_.ref());
-
-                forAll(gradThXXI, cellI)
-                {
-                    gradThXXI[cellI] = gradThetaX_.internalField()[cellI].component(0);
-                    gradThXYI[cellI] = gradThetaX_.internalField()[cellI].component(1);
-                    gradThYXI[cellI] = gradThetaY_.internalField()[cellI].component(0);
-                    gradThYYI[cellI] = gradThetaY_.internalField()[cellI].component(1);
-                }
-                
-               
-                forAll(gradThXX_.boundaryField(), patchI) 
-                {
-                    scalarField& pGradThXX(gradThXX_.boundaryFieldRef()[patchI]);
-                    scalarField& pGradThXY(gradThXY_.boundaryFieldRef()[patchI]);
-                    scalarField& pGradThYX(gradThYX_.boundaryFieldRef()[patchI]);
-                    scalarField& pGradThYY(gradThYY_.boundaryFieldRef()[patchI]);
-
-                    forAll (pGradThXX, faceI) 
-                    {
-                        pGradThXX[faceI] = gradThetaX_.boundaryField()[patchI][faceI].component(0);
-                        pGradThXY[faceI] = gradThetaX_.boundaryField()[patchI][faceI].component(1);
-                        pGradThYX[faceI] = gradThetaY_.boundaryField()[patchI][faceI].component(0);
-                        pGradThYY[faceI] = gradThetaY_.boundaryField()[patchI][faceI].component(1);
-                    
-                    }
-                }
-
-                QThetaXX_ =
-                (
-                    (bendingStiffness_ - torsionalStiffness_)*gradThXX_
-                    + (bendingStiffness_*nu_*gradThYY_)
-                    - (positionR.component(0)*gradM_.component(0))
-                );
-                QThetaXY_ = 
-                (
-                    torsionalStiffness_*gradThYX_
-                    - (positionR.component(0)*gradM_.component(1))
-            
-                );
-                QThetaYX_ = 
-                ( 
-                    torsionalStiffness_*gradThXY_
-                    - (positionR.component(1)*gradM_.component(0))
-                );
-                QThetaYY_ =
-                (
-                    ((bendingStiffness_ - torsionalStiffness_)*gradThYY_)
-                    + (bendingStiffness_*nu_*gradThXX_)
-                    - (positionR.component(1)*gradM_.component(1))
-                );
-                
-                vectorField& QThetaXI = QThetaX_.ref();
-                vectorField& QThetaYI = QThetaY_.ref();
-                forAll(QThetaXI, cellI)
-                {
-                    QThetaXI[cellI].component(0) = QThetaXX_.internalField()[cellI];
-                    QThetaXI[cellI].component(1) = QThetaXY_.internalField()[cellI];
-                    QThetaYI[cellI].component(0) = QThetaYX_.internalField()[cellI];
-                    QThetaYI[cellI].component(1) = QThetaYY_.internalField()[cellI];
-                }
-            
-                forAll(QThetaX_.boundaryField(), patchI) 
-                {
-                    vectorField& pQThetaX(QThetaX_.boundaryFieldRef()[patchI]);
-                    vectorField& pQThetaY(QThetaY_.boundaryFieldRef()[patchI]);
-
-                    forAll (pQThetaX, faceI) 
-                    {
-                        pQThetaX[faceI].component(0) = QThetaXX_.boundaryField()[patchI][faceI];
-                        pQThetaX[faceI].component(1) = QThetaXY_.boundaryField()[patchI][faceI];
-                        pQThetaY[faceI].component(0) = QThetaYX_.boundaryField()[patchI][faceI];
-                        pQThetaY[faceI].component(1) = QThetaYY_.boundaryField()[patchI][faceI];
-                    }
-                }
-
-                // Info<< "*-----------------------------------*" << nl
-                // // << "Rcell " << nl
-                // // << positionRcell.unzip(positionRcell, List<scalar>& rX)<< nl
-                // // << "Rbou" << nl <<  positionRbou
-                // << nl
-                // << "gradThXY " << gradThXY_ << nl
-                // << "gradM " << gradM_ << nl 
-                // << "QThetaX " << QThetaX_ << nl
-                // << "QThetaY " << QThetaY_ << nl
-                // // << "gradThXXI " << gradThXXI
-                // << "*---------------------------------------*" << nl
-                // << endl;
-
-                // Solve thetaX equation 
-                faScalarMatrix thetaXEqn
-                (
-                    fam::laplacian(torsionalStiffness_, thetaX_) + fac::div(QThetaX_)
-                );
-
-                // Solve the linear system
-                thetaXEqn.solve();
-                thetaX_.relax();
-
-                // gradThetaX_ = fac::grad(thetaX_);
-
-                // Solve thetaY equation
-                faScalarMatrix thetaYEqn
-                (
-                    fam::laplacian(torsionalStiffness_, thetaY_) + fac::div(QThetaY_)
-                );
-
-                // Solve the linear system
-                thetaYEqn.solve();
-                thetaY_.relax();
-
-                // For now, update gradThetaX and gradThetaY after solving
-                // both thetaX and thetaY; Dont know exactly if this is correct
-                // or better
-                gradThetaX_ = fac::grad(thetaX_);
-                gradThetaY_ = fac::grad(thetaY_);
-
-                // Store fields for under-relaxation and residual calculation
-                w_.storePrevIter();
-                
-                // Solve w equation
-                // faScalarMatrix wEqn
-                // (
-                //     fam::laplacian(bendingStiffness_, w_) + M_
-                // );
-
-                /*---------------------------------------------------------------*/
-                // const edgeScalarField& thetaXEdge(fac::interpolate(thetaX_));
-                // NOTE: The above code compiles but does not display desired results at runtime.
-                // Because you are trying to catch the results of a temporary object which deletes
-                // itself after creation. Hence Result is zero.
-
-                const label nCells(aMesh_.faceCells().size());
-                const labelList& edgeOwn(aMesh_.edgeOwner());
-                const labelList& edgeNei(aMesh_.edgeNeighbour());
-                const areaVectorField& posCellCentres(aMesh_.areaCentres());
-
-                // Info<< "edge owners " << nl << edgeOwn << endl;
-
-                const edgeScalarField thetaXEdge(fac::interpolate(thetaX_));
-                const scalarField& thetaXEdgeI(thetaXEdge.internalField());
-                // scalarField thetaXEdgeI(aMesh_.edges().size(), 1.0);
-                const edgeScalarField thetaYEdge(fac::interpolate(thetaY_));
-                const scalarField& thetaYEdgeI(thetaYEdge.internalField());
-                // scalarField thetaYEdgeI(aMesh_.edges().size(), 1.0);
-
-                // Initialise matrix (For w eqn per cell)
-                SparseMatrixTemplate<scalar> matrix(nCells);
-
-                // Initialse source vector
-                scalarField source(nCells, 0.0);
-
-                // Initioalise solution w field
-                scalarField solveW(nCells, 0.0);
-
-                forAll(aMesh_.faces(),faceI)
-                {
-                    forAll(aMesh_.edges(), edgeI)
-                    {
-                        if(aMesh_.isInternalEdge(edgeI))
-                        {
-                            if (edgeOwn[edgeI] == faceI)
-                            {
-                                matrix(faceI, edgeNei[edgeI]) = -1;
-                                matrix(edgeNei[edgeI], faceI) = -1;
-                            }
-                            if ((edgeOwn[edgeI] == faceI) || (edgeNei[edgeI] == faceI))
-                            {
-                                vector deltaR(vector::zero);
-                                if(edgeOwn[edgeI] == faceI)
-                                {
-                                    deltaR = posCellCentres[edgeNei[edgeI]] 
-                                        - posCellCentres[edgeOwn[edgeI]];
-                                }
-                                else
-                                {
-                                    deltaR = posCellCentres[edgeOwn[edgeI]] 
-                                        - posCellCentres[edgeNei[edgeI]];
-                                }
-                                source[faceI] += deltaR.component(0)*thetaXEdgeI[edgeI]
-                                    + deltaR.component(1)*thetaYEdgeI[edgeI];
-                            }
-                        }
-                    }
-                }
-
-                // Populating the diagonal entries of the matrix - negSumDiag 
-                forAll (aMesh_.faceCells(), rowI)
-                {
-                    label count = 0;
-                    forAll (aMesh_.faceCells(), colI)
-                    {
-                        if (matrix(rowI,colI) == -1)
-                        {
-                            count += 1;
-                        }
-                    }
-                    matrix(rowI, rowI) = count;
-                }
-                if(debug_)
-                {
-                    Info<< "Before boundary data " << endl;   
-                    Info<< "matrix " << nl << matrix.data()
-                        << "source " << nl << source << nl 
-                        << "****************************" << endl; 
-                }
-                //- Contribution of the boundary edges to the w eqn
-                forAll(aMesh_.boundary(), patchI)
-                {
-                    const vectorField pDelta(aMesh_.boundary()[patchI].delta());
-                    
-                    // This seems to be like a dynamic list of integers
-                    // const UList<int>& bouEdgeLabels(aMesh_.boundary().edgeLabels()[patchI]);
-                    const scalarField& pThetaX = thetaX_.boundaryField()[patchI];
-                    const scalarField& pThetaY = thetaY_.boundaryField()[patchI];
-                    const scalarField& pW = w_.boundaryField()[patchI];
-
-                    if(debug_)
-                    {
-                        Info<< "---------------------------------" << nl 
-                            <<  "patchI " << aMesh_.boundary()[patchI].name() << nl
-                            << "delta " << tab << pDelta << nl 
-                            << "pThetaX " << tab << pThetaX << nl 
-                            << "pThetaY " << tab << pThetaY << nl 
-                            << "pW " << tab << pW <<  endl;
-                    }
-                    forAll(aMesh_.boundary()[patchI], faceI)
-                    {
-                        const label bI = aMesh_.boundary()[patchI].edgeFaces()[faceI];
-                        matrix(bI,bI) += 1;
-
-                        // Info<< "source term: " << tab <<  pDelta[faceI].component(0)*pThetaX[faceI]
-                        //      + pDelta[faceI].component(1)*pThetaY[faceI] + pW[faceI] << tab 
-                        //     << " added at cell location " << tab << bI << endl;
-
-
-                        source[bI] += pDelta[faceI].component(0)*pThetaX[faceI]
-                             + pDelta[faceI].component(1)*pThetaY[faceI] + pW[faceI];
-
-                    }
-
-                }
-                
-                if(debug_)
-                {
-                    Info<< "****************************" << endl; 
-                    Info<< "After adding  boundary data " << endl;
-                    Info<< "matrix " << nl << matrix.data()
-                        << "source " << nl << source << nl 
-                        << "****************************" << endl; 
-                }
-                // Relax the linear system
-                // wEqn.relax();
-
-                // Solve the linear system
-                // solverPerfw = wEqn.solve();
-
-                // Using Eigen SparseLU direct solver
-                sparseMatrixTools::solveLinearSystemEigen
-                (
-                    matrix, source, solveW, false, debug
-                );
-
-                // Retrieve solution
-                for(label i = 0; i < nCells; ++i)
-                {
-                    w_[i] = solveW[i];
-                }
-
-                // Relax the field
-                w_.relax();
-
-                // Update the angle of rotation
-                // theta_ = -fac::grad(w_);
-                // thetaX_(theta.component(0));
-                // thetaY_(theta.component(1));
-
-                // Update the gradient of rotation field, used for non-orthogonal
-                // correction in clamped boundary conditions
-                // gradTheta_ = fac::grad(theta_);
-                
-
-                // Info<< "theta " << theta_ << nl << endl;
-                // << "gradTheta " << gradTheta_ << endl;         
-            }
-            while
+        Info<< "\nUsing segregated approach to solve for w & M eqns " 
+            << "separately and iteratively update them!" << endl;
+
+        do
+        { 
+            // Store fields for under-relaxation and residual calculation
+            M_.storePrevIter();
+
+            // Solve M equation
+            // Also, "==" complains so we will move all terms to left
+            faScalarMatrix MEqn
             (
-                // !converged(iCorr, solverPerfM, solverPerfw, M_, w_)
-                // && 
-                ++iCorr < nCorr()
+                - fam::laplacian(M_) - p_
             );
+
+            // d2dt2 can only take Euler as keyword, but if the user wants it to
+            // be steadyState, it cannot happen. Hence check for ddtScheme 
+            // and add inertial terms for not steady state!!
+            if(ddtSchemeName != "steadyState")
+            {
+                MEqn += rho_*h_*(fac::d2dt2(w_));
+            }
+
+            // Relax the linear system
+            MEqn.relax();
+
+            // Solve the linear system
+            solverPerfM = MEqn.solve();
+
+            // Relax the field
+            M_.relax();
+
+            // Update the gradient of moment sum
+            gradM_ = fac::grad(M_);
+
+            // Interpolate the gradient values to edge centres
+            const edgeVectorField gradMEdge(fac::interpolate(gradM_));
+
+            // Access to area mesh data 
+            const areaVectorField& cellCentres(aMesh_.areaCentres());
+            const label nCells(aMesh_.faceCells().size());
+            const labelList& edgeOwn(aMesh_.edgeOwner());
+            const labelList& edgeNei(aMesh_.edgeNeighbour());
+            const edgeVectorField& edgeCentres(aMesh_.edgeCentres());
+            const edgeVectorField& Le(aMesh_.Le());
+
+            scalarField& gradThXXI(gradThXX_.ref());
+            scalarField& gradThXYI(gradThXY_.ref());
+            scalarField& gradThYXI(gradThYX_.ref());
+            scalarField& gradThYYI(gradThYY_.ref());
+
+            forAll(gradThXXI, cellI)
+            {
+                gradThXXI[cellI] = gradThetaX_.internalField()[cellI].component(0);
+                gradThXYI[cellI] = gradThetaX_.internalField()[cellI].component(1);
+                gradThYXI[cellI] = gradThetaY_.internalField()[cellI].component(0);
+                gradThYYI[cellI] = gradThetaY_.internalField()[cellI].component(1);
+            }
+        
+            forAll(gradThXX_.boundaryField(), patchI) 
+            {
+                scalarField& pGradThXX(gradThXX_.boundaryFieldRef()[patchI]);
+                scalarField& pGradThXY(gradThXY_.boundaryFieldRef()[patchI]);
+                scalarField& pGradThYX(gradThYX_.boundaryFieldRef()[patchI]);
+                scalarField& pGradThYY(gradThYY_.boundaryFieldRef()[patchI]);
+
+                forAll (pGradThXX, faceI) 
+                {
+                    pGradThXX[faceI] = gradThetaX_.boundaryField()[patchI][faceI].component(0);
+                    pGradThXY[faceI] = gradThetaX_.boundaryField()[patchI][faceI].component(1);
+                    pGradThYX[faceI] = gradThetaY_.boundaryField()[patchI][faceI].component(0);
+                    pGradThYY[faceI] = gradThetaY_.boundaryField()[patchI][faceI].component(1);
+                
+                }
+            }
+
+            QThetaXX_ =
+            (
+                (bendingStiffness_ - torsionalStiffness_)*gradThXX_
+                + (bendingStiffness_*nu_*gradThYY_)
+            );
+            QThetaXY_ = 
+            (
+                torsionalStiffness_*gradThYX_ 
+            );
+            QThetaYX_ = 
+            ( 
+                torsionalStiffness_*gradThXY_
+            );
+            QThetaYY_ =
+            (
+                (bendingStiffness_ - torsionalStiffness_)*gradThYY_
+                + (bendingStiffness_*nu_*gradThXX_)
+            );
+            
+            vectorField& QThetaXI = QThetaX_.ref();
+            vectorField& QThetaYI = QThetaY_.ref();
+            forAll(QThetaXI, cellI)
+            {
+                QThetaXI[cellI].component(0) = QThetaXX_.internalField()[cellI];
+                QThetaXI[cellI].component(1) = QThetaXY_.internalField()[cellI];
+                QThetaYI[cellI].component(0) = QThetaYX_.internalField()[cellI];
+                QThetaYI[cellI].component(1) = QThetaYY_.internalField()[cellI];
+            }
+        
+            forAll(QThetaX_.boundaryField(), patchI) 
+            {
+                vectorField& pQThetaX(QThetaX_.boundaryFieldRef()[patchI]);
+                vectorField& pQThetaY(QThetaY_.boundaryFieldRef()[patchI]);
+
+                forAll (pQThetaX, faceI) 
+                {
+                    pQThetaX[faceI].component(0) = QThetaXX_.boundaryField()[patchI][faceI];
+                    pQThetaX[faceI].component(1) = QThetaXY_.boundaryField()[patchI][faceI];
+                    pQThetaY[faceI].component(0) = QThetaYX_.boundaryField()[patchI][faceI];
+                    pQThetaY[faceI].component(1) = QThetaYY_.boundaryField()[patchI][faceI];
+                }
+            }
+
+            //- Initialise another edgeVectorField to store edgeCentres minus cellCentres
+            //- For every edge, subtract position vector of the owner of the edge 
+            //- from the edgeCentre position vector because origin assumed at centre of CV  
+            edgeVectorField rVec
+            (
+                IOobject
+                (
+                    "rVec",
+                    runTime().timeName(),
+                    mesh(),
+                    IOobject::NO_READ,
+                    IOobject::NO_WRITE
+                ),
+                aMesh_,
+                dimensionedVector("zero", dimLength, vector(0, 0, 0)) 
+            );
+
+            forAll(edgeCentres.internalField(), edgeI)
+            {
+                rVec[edgeI] = edgeCentres[edgeI] - cellCentres[edgeOwn[edgeI]];
+            }
+
+            forAll(edgeCentres.boundaryField(), patchI)
+            {
+                faePatchField<vector>& pRVec = rVec.boundaryFieldRef()[patchI];
+                forAll(edgeCentres.boundaryField()[patchI], edgeI)
+                {
+                    const label bI = aMesh_.boundary()[patchI].edgeFaces()[edgeI];
+                    pRVec[edgeI] = edgeCentres.boundaryField()[patchI][edgeI] 
+                        - cellCentres.internalField()[bI];
+                }
+            }
+
+            // Solve thetaX equation 
+            faScalarMatrix thetaXEqn
+            (
+                fam::laplacian(torsionalStiffness_, thetaX_)
+                    - fac::edgeIntegrate(Le & (mag(rVec.component(0))*gradMEdge))
+                    + fac::div(QThetaX_)
+            );
+
+        
+            Info<< "*-----------------------------------*" << nl
+            << "theta X source " << thetaXEqn.source() << nl 
+            << "QThetaX div term " << fac::div(QThetaX_) << nl
+            << "mesh Le " << aMesh_.Le() << nl 
+            // << "rVec " << rVec << nl 
+            << "*---------------------------------------*" << nl
+            << endl;
+
+            // Solve the linear system
+            thetaXEqn.solve();
+            thetaX_.relax();
+
+            // gradThetaX_ = fac::grad(thetaX_);
+
+            // Solve thetaY equation
+            faScalarMatrix thetaYEqn
+            (
+                fam::laplacian(torsionalStiffness_, thetaY_) 
+                - fac::edgeIntegrate(Le & (mag(rVec.component(1))*gradMEdge))
+                + fac::div(QThetaY_) 
+            );
+
+            // Solve the linear system
+            thetaYEqn.solve();
+            thetaY_.relax();
+
+            // For now, update gradThetaX and gradThetaY after solving
+            // both thetaX and thetaY; Dont know exactly if this is correct
+            // or better
+            gradThetaX_ = fac::grad(thetaX_);
+            gradThetaY_ = fac::grad(thetaY_);
+
+            // Store fields for under-relaxation and residual calculation
+            w_.storePrevIter();
+            
+            // Solve w equation
+            // faScalarMatrix wEqn
+            // (
+            //     fam::laplacian(bendingStiffness_, w_) + M_
+            // );
+
+            /*---------------------------------------------------------------*/
+            // const edgeScalarField& thetaXEdge(fac::interpolate(thetaX_));
+            // NOTE: The above code compiles but does not display desired results at runtime.
+            // Because you are trying to catch the results of a temporary object which deletes
+            // itself after creation. Hence Result is zero.
+
+            const edgeScalarField thetaXEdge(fac::interpolate(thetaX_));
+            const scalarField& thetaXEdgeI(thetaXEdge.internalField());
+            // scalarField thetaXEdgeI(aMesh_.edges().size(), 1.0);
+            const edgeScalarField thetaYEdge(fac::interpolate(thetaY_));
+            const scalarField& thetaYEdgeI(thetaYEdge.internalField());
+            // scalarField thetaYEdgeI(aMesh_.edges().size(), 1.0);
+
+            // Initialise matrix (For w eqn per cell)
+            SparseMatrixTemplate<scalar> matrix(nCells);
+
+            // Initialse source vector
+            scalarField source(nCells, 0.0);
+
+            // Initioalise solution w field
+            scalarField solveW(nCells, 0.0);
+
+            forAll(aMesh_.faces(),faceI)
+            {
+                forAll(aMesh_.edges(), edgeI)
+                {
+                    if(aMesh_.isInternalEdge(edgeI))
+                    {
+                        if (edgeOwn[edgeI] == faceI)
+                        {
+                            matrix(faceI, edgeNei[edgeI]) = -1;
+                            matrix(edgeNei[edgeI], faceI) = -1;
+                        }
+                        if ((edgeOwn[edgeI] == faceI) || (edgeNei[edgeI] == faceI))
+                        {
+                            vector deltaR(vector::zero);
+                            if(edgeOwn[edgeI] == faceI)
+                            {
+                                deltaR = cellCentres[edgeNei[edgeI]] 
+                                    - cellCentres[edgeOwn[edgeI]];
+                            }
+                            else
+                            {
+                                deltaR = cellCentres[edgeOwn[edgeI]] 
+                                    - cellCentres[edgeNei[edgeI]];
+                            }
+                            source[faceI] += deltaR.component(0)*thetaXEdgeI[edgeI]
+                                + deltaR.component(1)*thetaYEdgeI[edgeI];
+                        }
+                    }
+                }
+            }
+
+            // Populating the diagonal entries of the matrix - negSumDiag 
+            forAll (aMesh_.faceCells(), rowI)
+            {
+                label count = 0;
+                forAll (aMesh_.faceCells(), colI)
+                {
+                    if (matrix(rowI,colI) == -1)
+                    {
+                        count += 1;
+                    }
+                }
+                matrix(rowI, rowI) = count;
+            }
+            if(debug_)
+            {
+                Info<< "Before boundary data " << endl;   
+                Info<< "matrix " << nl << matrix.data()
+                    << "source " << nl << source << nl 
+                    << "****************************" << endl; 
+            }
+            //- Contribution of the boundary edges to the w eqn
+            forAll(aMesh_.boundary(), patchI)
+            {
+                const vectorField pDelta(aMesh_.boundary()[patchI].delta());
+                
+                // This seems to be like a dynamic list of integers
+                // const UList<int>& bouEdgeLabels(aMesh_.boundary().edgeLabels()[patchI]);
+                const scalarField& pThetaX = thetaX_.boundaryField()[patchI];
+                const scalarField& pThetaY = thetaY_.boundaryField()[patchI];
+                const scalarField& pW = w_.boundaryField()[patchI];
+
+                if(debug_)
+                {
+                    Info<< "---------------------------------" << nl 
+                        <<  "patchI " << aMesh_.boundary()[patchI].name() << nl
+                        << "delta " << tab << pDelta << nl 
+                        << "pThetaX " << tab << pThetaX << nl 
+                        << "pThetaY " << tab << pThetaY << nl 
+                        << "pW " << tab << pW <<  endl;
+                }
+                forAll(aMesh_.boundary()[patchI], faceI)
+                {
+                    const label bI = aMesh_.boundary()[patchI].edgeFaces()[faceI];
+                    matrix(bI,bI) += 1;
+
+                    // Info<< "source term: " << tab <<  pDelta[faceI].component(0)*pThetaX[faceI]
+                    //      + pDelta[faceI].component(1)*pThetaY[faceI] + pW[faceI] << tab 
+                    //     << " added at cell location " << tab << bI << endl;
+
+
+                    source[bI] += pDelta[faceI].component(0)*pThetaX[faceI]
+                            + pDelta[faceI].component(1)*pThetaY[faceI] + pW[faceI];
+
+                }
+
+            }
+            
+            if(debug_)
+            {
+                Info<< "****************************" << endl; 
+                Info<< "After adding  boundary data " << endl;
+                Info<< "matrix " << nl << matrix.data()
+                    << "source " << nl << source << nl 
+                    << "****************************" << endl; 
+            }
+            // Relax the linear system
+            // wEqn.relax();
+
+            // Solve the linear system
+            // solverPerfw = wEqn.solve();
+
+            // Using Eigen SparseLU direct solver
+            sparseMatrixTools::solveLinearSystemEigen
+            (
+                matrix, source, solveW, false, debug
+            );
+
+            // Retrieve solution
+            for(label i = 0; i < nCells; ++i)
+            {
+                w_[i] = solveW[i];
+            }
+
+            // Relax the field
+            w_.relax();
+
+            // Update the angle of rotation
+            // theta_ = -fac::grad(w_);
+            // thetaX_(theta.component(0));
+            // thetaY_(theta.component(1));
+
+            // Update the gradient of rotation field, used for non-orthogonal
+            // correction in clamped boundary conditions
+            // gradTheta_ = fac::grad(theta_);
+            
+
+            // Info<< "theta " << theta_ << nl << endl;
+            // << "gradTheta " << gradTheta_ << endl;         
+        }
+        while
+        (
+            // !converged(iCorr, solverPerfM, solverPerfw, M_, w_)
+            // && 
+            ++iCorr < nCorr()
+        );
 
     
         
