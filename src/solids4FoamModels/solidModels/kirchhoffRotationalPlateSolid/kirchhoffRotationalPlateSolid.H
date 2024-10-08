@@ -87,9 +87,6 @@ class kirchhoffRotationalPlateSolid
 
         //- Net pressure field on the plate volume field
         volScalarField pVf_;
-
-        //- Angle of rotation 
-        // areaVectorField theta_;
         
         //- Angle of rotation thetaX (about y - axis)
         areaScalarField thetaX_;
@@ -103,7 +100,16 @@ class kirchhoffRotationalPlateSolid
         //- Angle of rotation volume field for visualisation
         volScalarField thetaYVf_;
 
-        //- Gradient of angle of rotation
+        //- Zero scalar Field required to set the z-comp of theta to zero
+        areaScalarField zeroField_;
+        
+        // //- Angle of rotation 
+        // areaVectorField theta_;
+
+        // //- Angle of rotation volume field for visualisation
+        // volVectorField thetaVf_;
+
+        // //- Gradient of angle of rotation
         // areaTensorField gradTheta_;
 
         //- Gradient of angle of rotation thetaX

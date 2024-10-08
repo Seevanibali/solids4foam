@@ -401,19 +401,6 @@ kirchhoffRotationalPlateSolid::kirchhoffRotationalPlateSolid
         mesh(),
         dimensionedScalar("zero", p_.dimensions(), 0.0)
     ),
-    // theta_
-    // (
-    //     IOobject
-    //     (
-    //         "theta",
-    //         runTime.timeName(),
-    //         mesh(),
-    //         IOobject::NO_READ,
-    //         IOobject::AUTO_WRITE
-    //     ),
-    //     aMesh_,
-    //     dimensionedVector("zero", dimless, vector::zero)
-    // ),
     thetaX_
     (
         IOobject
@@ -464,6 +451,45 @@ kirchhoffRotationalPlateSolid::kirchhoffRotationalPlateSolid
         mesh(),
         dimensionedScalar("zero", dimless, 0.0)
     ),
+    zeroField_
+    (
+        IOobject
+        (
+            "zeroField",
+            runTime.timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        aMesh_,
+        dimensionedScalar("zero", dimless, 0.0)
+    ),
+    // theta_
+    // (
+    //     IOobject
+    //     (
+    //         "theta",
+    //         runTime.timeName(),
+    //         mesh(),
+    //         IOobject::NO_READ,
+    //         IOobject::AUTO_WRITE
+    //     ),
+    //     aMesh_,
+    //     vectorField(thetaX_, thetaY_, zeroField_)
+    // ),
+    // thetaVf_
+    // (
+    //     IOobject
+    //     (
+    //         "theta",
+    //         runTime.timeName(),
+    //         mesh(),
+    //         IOobject::NO_READ,
+    //         IOobject::AUTO_WRITE
+    //     ),
+    //     mesh(),
+    //     dimensionedVector("zero", dimless, vector::zero)
+    // ),
     // gradTheta_(fac::grad(theta_)),
     gradThetaX_
     (
@@ -574,6 +600,27 @@ kirchhoffRotationalPlateSolid::kirchhoffRotationalPlateSolid
     nu_ = mech.nu();
     bendingStiffness_ = E_*pow(h_, 3)/(12*(1 - pow(nu_, 2)));
     torsionalStiffness_ = E_*pow(h_, 3)/(12*(1 + nu_));
+
+
+    // areaScalarField zeroField
+    // (
+    //     IOobject
+    //     (
+    //         "zeroField",
+    //         runTime.timeName(),
+    //         mesh(),
+    //         IOobject::NO_READ,
+    //         IOobject::NO_WRITE
+    //     ),
+    //     aMesh_,
+    //     dimensionedScalar("zero", dimless, 0.0)
+    // );
+
+    // theta_.component(vector::X) = thetaX_;
+    // theta_.component(vector::Y) = thetaY_;
+    // theta_.component(vector::Z) = zeroField;
+
+    // Info<< "theta " << nl << theta_ << endl;
 }
 
 
@@ -689,7 +736,23 @@ bool kirchhoffRotationalPlateSolid::evolve()
             gradM_ = fac::grad(M_);
 
             // Interpolate the gradient values to edge centres
-            const edgeVectorField gradMEdge(fac::interpolate(gradM_));
+            // const edgeVectorField gradMEdge(fac::interpolate(gradM_));
+
+            // const edgeVectorField gradMEdge
+            // (
+            //     IOobject
+            //     (
+            //         "gradMEdge",                       
+            //         runTime().timeName(),                
+            //         mesh(),                              
+            //         IOobject::NO_READ,                   
+            //         IOobject::NO_WRITE                   
+            //     ),
+            //     aMesh_,
+            //     dimensionedVector("one", gradM_.dimensions(), vector(1,1,1))
+            // );
+
+            // Info<< "gradMEdge " << gradMEdge << endl;
 
             // Access to area mesh data 
             const areaVectorField& cellCentres(aMesh_.areaCentres());
@@ -775,51 +838,153 @@ bool kirchhoffRotationalPlateSolid::evolve()
             //- Initialise another edgeVectorField to store edgeCentres minus cellCentres
             //- For every edge, subtract position vector of the owner of the edge 
             //- from the edgeCentre position vector because origin assumed at centre of CV  
-            edgeVectorField rVec
-            (
-                IOobject
-                (
-                    "rVec",
-                    runTime().timeName(),
-                    mesh(),
-                    IOobject::NO_READ,
-                    IOobject::NO_WRITE
-                ),
-                aMesh_,
-                dimensionedVector("zero", dimLength, vector(0, 0, 0)) 
-            );
+            // edgeVectorField rVec
+            // (
+            //     IOobject
+            //     (
+            //         "rVec",
+            //         runTime().timeName(),
+            //         mesh(),
+            //         IOobject::NO_READ,
+            //         IOobject::NO_WRITE
+            //     ),
+            //     aMesh_,
+            //     dimensionedVector("zero", dimLength, vector(0, 0, 0)) 
+            // );
 
-            forAll(edgeCentres.internalField(), edgeI)
-            {
-                rVec[edgeI] = edgeCentres[edgeI] - cellCentres[edgeOwn[edgeI]];
-            }
+            // forAll(edgeCentres.internalField(), edgeI)
+            // {
+            //     rVec[edgeI] = edgeCentres[edgeI] - cellCentres[edgeOwn[edgeI]];
+            // }
 
-            forAll(edgeCentres.boundaryField(), patchI)
-            {
-                faePatchField<vector>& pRVec = rVec.boundaryFieldRef()[patchI];
-                forAll(edgeCentres.boundaryField()[patchI], edgeI)
-                {
-                    const label bI = aMesh_.boundary()[patchI].edgeFaces()[edgeI];
-                    pRVec[edgeI] = edgeCentres.boundaryField()[patchI][edgeI] 
-                        - cellCentres.internalField()[bI];
-                }
-            }
+            // forAll(edgeCentres.boundaryField(), patchI)
+            // {
+            //     faePatchField<vector>& pRVec = rVec.boundaryFieldRef()[patchI];
+            //     forAll(edgeCentres.boundaryField()[patchI], edgeI)
+            //     {
+            //         const label bI = aMesh_.boundary()[patchI].edgeFaces()[edgeI];
+            //         pRVec[edgeI] = edgeCentres.boundaryField()[patchI][edgeI] 
+            //             - cellCentres.internalField()[bI];
+            //     }
+            // }
+
+    //     // Calculate the internal fields for each component of gradM2Theta
+    //     const scalarField gradM2ThetaXI 
+    //         = (Le & (mag(rVec.component(0)) * gradMEdge))->internalField();
+    //     const scalarField gradM2ThetaYI 
+    //         = (Le & (mag(rVec.component(1)) * gradMEdge))->internalField();
+    //     const scalarField gradM2ThetaZI 
+    //         = (Le & (mag(rVec.component(2)) * gradMEdge))->internalField();
+
+    //     // Calculate the internal fields for each component of gradM2Theta as vectorField
+    //     vectorField gradM2ThetaI(gradM2ThetaXI.size());
+        
+    //     forAll(gradM2ThetaI, i)
+    //     {
+    //         gradM2ThetaI[i] = vector(gradM2ThetaXI[i], gradM2ThetaYI[i], gradM2ThetaZI[i]);
+    //     }
+
+    // // Boundary field
+    // label nBoundaryFaces = (Le & (mag(rVec.component(0)) * gradMEdge))->boundaryField().size();
+
+    // Field<vector> gradM2ThetaBoundary(nBoundaryFaces);
+    // for (label i = 0; i < nBoundaryFaces; ++i)
+    // {
+    //     gradM2ThetaBoundary[i] = vectorField
+    //     (
+    //         (Le & (mag(rVec.component(0)) * gradMEdge))->boundaryField()[i], // X-component
+    //         (Le & (mag(rVec.component(1)) * gradMEdge))->boundaryField()[i], // Y-component
+    //         (Le & (mag(rVec.component(2)) * gradMEdge))->boundaryField()[i]  // Z-component
+    //     );
+    // }
+
+
+        // // Calculate the boundary fields for each component of gradM2Theta
+        // const edgeScalarField::Boundary pGradM2ThetaX
+        //     = (Le & (mag(rVec.component(0)) * gradMEdge))->boundaryField();
+        // const edgeScalarField::Boundary pGradM2ThetaY
+        //     = (Le & (mag(rVec.component(1)) * gradMEdge))->boundaryField();
+        // const edgeScalarField::Boundary pGradM2ThetaZ
+        //     = (Le & (mag(rVec.component(2)) * gradMEdge))->boundaryField();
+
+        // edgeVectorField gradM2Theta
+        // (
+        //     IOobject
+        //     (
+        //         "gradM2Theta",                       // Name of the field
+        //         runTime().timeName(),                // Time name
+        //         mesh(),                              // Mesh
+        //         IOobject::NO_READ,                   // Don't read from file
+        //         IOobject::NO_WRITE                   // No write
+        //     ),
+        //     // aMesh_,                                  // Mesh
+        //     vectorField(gradM2ThetaXI, gradM2ThetaYI, gradM2ThetaZI), // Internal field values
+        //     edgeScalarField::Boundary(pGradM2ThetaX, pGradM2ThetaY, pGradM2ThetaZ) // Boundary field values
+
+        // );
+
+
+        // Now create the edgeVectorField gradM2Theta
+        // edgeVectorField gradM2Theta
+        // (
+        //     IOobject
+        //     (
+        //         "gradM2Theta",
+        //         runTime().timeName(),
+        //         mesh(),
+        //         IOobject::NO_READ,
+        //         IOobject::NO_WRITE
+        //     ),
+        //     aMesh_,
+        //     dimensionedVector
+        //     (
+        //         "zero", gradM_.dimensions() * dimArea,
+        //         vector::zero   // Set the correct dimensions for the field
+        //     )
+        // );
+
+
+            //- This code compiles but when printed, the fields are not stored and e
+            //- everything is zero
+            // gradM2Theta.component(vector::X) = Le & (mag(rVec.component(0))*gradMEdge);
+            // gradM2Theta.component(vector::Y) = Le & (mag(rVec.component(1))*gradMEdge);
+
+            // gradM2Theta.internalField().component(vector::X) 
+            //     = (Le & (mag(rVec.component(0))*gradMEdge))->internalField();
+            // gradM2Theta.internalField().component(vector::Y) 
+            //     = (Le & (mag(rVec.component(1))*gradMEdge))->internalField();
+
+            // // Set the boundary field components of theta_
+            // forAll(gradM2Theta.boundaryField(), patchI)  // Loop through each boundary patch
+            // {
+            //     gradM2Theta.boundaryField()[patchI].component(vector::X) 
+            //         = (Le & (mag(rVec.component(0))*gradMEdge))->boundaryField()[patchI];  // Set x-component
+            //     gradM2Theta.boundaryField()[patchI].component(vector::Y)
+            //         = (Le & (mag(rVec.component(0))*gradMEdge))->boundaryField()[patchI];  // Set y-component
+            // }
+
+            // Info<< "gradM2Theta X component " << nl << (Le & (mag(rVec.component(0))*gradMEdge))->internalField()
+            //     << nl << "gradM2Theta" << nl << gradM2Theta << endl;
 
             // Solve thetaX equation 
             faScalarMatrix thetaXEqn
             (
                 fam::laplacian(torsionalStiffness_, thetaX_)
-                    - fac::edgeIntegrate(Le & (mag(rVec.component(0))*gradMEdge))
+                    // - fac::edgeIntegrate(Le & (mag(rVec.component(0))*gradMEdge))
                     + fac::div(QThetaX_)
+                    - fac::div(cellCentres.component(0) * gradM_)
+                    - (cellCentres.component(0)*p_)
             );
 
         
             Info<< "*-----------------------------------*" << nl
-            << "theta X source " << thetaXEqn.source() << nl 
-            << "QThetaX div term " << fac::div(QThetaX_) << nl
-            << "mesh Le " << aMesh_.Le() << nl 
+            << "iCorr " << nl << iCorr << nl
+            // << "theta X source " << thetaXEqn.source() << nl 
+            // << "Le & " << nl << (Le & (mag(rVec.component(0))*gradMEdge)) << nl
+            // << "fac::edgeIntegrate " << nl << fac::edgeIntegrate(Le & (mag(rVec.component(0))*gradMEdge)) << nl
+            // << "mesh Le " << aMesh_.Le() << nl 
             // << "rVec " << rVec << nl 
-            << "*---------------------------------------*" << nl
+            // << "*---------------------------------------*" << nl
             << endl;
 
             // Solve the linear system
@@ -832,8 +997,10 @@ bool kirchhoffRotationalPlateSolid::evolve()
             faScalarMatrix thetaYEqn
             (
                 fam::laplacian(torsionalStiffness_, thetaY_) 
-                - fac::edgeIntegrate(Le & (mag(rVec.component(1))*gradMEdge))
+                // - fac::edgeIntegrate(Le & (mag(rVec.component(1))*gradMEdge))
                 + fac::div(QThetaY_) 
+                - fac::div(cellCentres.component(1) * gradM_)
+                - (cellCentres.component(1)*p_)
             );
 
             // Solve the linear system
