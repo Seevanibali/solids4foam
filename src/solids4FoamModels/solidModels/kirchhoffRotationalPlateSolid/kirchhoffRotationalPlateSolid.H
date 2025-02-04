@@ -190,16 +190,20 @@ class kirchhoffRotationalPlateSolid
         //- Check if the momentum equation is converged
         bool converged
         (
-            const int iCorr,
-#ifdef OPENFOAM_NOT_EXTEND
-            const SolverPerformance<scalar>& solverPerfM,
-            const SolverPerformance<scalar>& solverPerfw,
-#else
-            const lduSolverPerformance& solverPerfM,
-            const lduSolverPerformance& solverPerfw,
-#endif
-            const areaScalarField& M,
-            const areaScalarField& w
+        const int iCorr,
+    #ifdef OPENFOAM_NOT_EXTEND
+        const SolverPerformance<scalar>& solverPerfM,
+        const SolverPerformance<scalar>& solverPerfThetaX,
+        const SolverPerformance<scalar>&  solverPerfThetaY,
+    #else
+        const lduSolverPerformance& solverPerfM,
+        const lduSolverPerformance& solverPerfThetaX,
+        const lduSolverPerformance& solverPerfThetaY,
+    #endif
+        const areaScalarField& M,
+        const areaScalarField& thetaX,
+        const areaScalarField& thetaY,
+        const areaScalarField& w
         );
 
         //- Return a reference to the areaPatch

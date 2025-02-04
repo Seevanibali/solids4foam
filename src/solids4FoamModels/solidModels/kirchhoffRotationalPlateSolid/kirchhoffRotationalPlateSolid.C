@@ -55,12 +55,16 @@ bool kirchhoffRotationalPlateSolid::converged
     const int iCorr,
 #ifdef OPENFOAM_NOT_EXTEND
     const SolverPerformance<scalar>& solverPerfM,
-    const SolverPerformance<scalar>& solverPerfw,
+    const SolverPerformance<scalar>& solverPerfThetaX,
+    const SolverPerformance<scalar>&  solverPerfThetaY,
 #else
     const lduSolverPerformance& solverPerfM,
-    const lduSolverPerformance& solverPerfw,
+    const lduSolverPerformance& solverPerfThetaX,
+    const lduSolverPerformance& solverPerfThetaY,
 #endif
     const areaScalarField& M,
+    const areaScalarField& thetaX,
+    const areaScalarField& thetaY,
     const areaScalarField& w
 )
 {
@@ -80,15 +84,39 @@ bool kirchhoffRotationalPlateSolid::converged
             )()
         );
 
+    const scalar resThetaX =
+        gMax
+        (
+            (
+                mag(thetaX - thetaX.prevIter())
+            //    /max
+            //     (
+            //         gMax(mag(thetaX - thetaX.oldTime())()), SMALL
+            //     )
+            )()
+        );
+
+    const scalar resThetaY =
+        gMax
+        (
+            (
+                mag(thetaY - thetaY.prevIter())
+            //    /max
+            //     (
+            //         gMax(mag(thetaY - thetaY.oldTime())()), SMALL
+            //     )
+            )()
+        );
+
     const scalar residualw =
         gMax
         (
             (
                 mag(w - w.prevIter())
-               /max
-                (
-                    gMax(mag(w - w.oldTime())()), SMALL
-                )
+            //    /max
+            //     (
+            //         gMax(mag(w - w.oldTime())()), SMALL
+            //     )
             )()
         );
 
@@ -101,6 +129,8 @@ bool kirchhoffRotationalPlateSolid::converged
     if (iCorr > 1 && materialResidual < materialTol())
     {
         bool convergedM = false;
+        bool convergedThetaX = false;
+        bool convergedThetaY = false;
         bool convergedw = false;
 
         if
@@ -109,8 +139,8 @@ bool kirchhoffRotationalPlateSolid::converged
                 solverPerfM.initialResidual() < solutionTol()
              && residualM < solutionTol()
             )
-         || solverPerfM.initialResidual() < alternativeTol()
-         || residualM < alternativeTol()
+        //  || solverPerfM.initialResidual() < alternativeTol()
+        //  || residualM < alternativeTol()
         )
         {
             convergedM = true;
@@ -119,18 +149,45 @@ bool kirchhoffRotationalPlateSolid::converged
         if
         (
             (
-                solverPerfw.initialResidual() < solutionTol()
-             && residualw < solutionTol()
+                solverPerfThetaX.initialResidual() < solutionTol()
+             && resThetaX < solutionTol()
             )
-         || solverPerfw.initialResidual() < alternativeTol()
-         || residualw < alternativeTol()
+         || solverPerfThetaX.initialResidual() < alternativeTol()
+         || resThetaX < alternativeTol()
+        )
+        {
+            convergedThetaX = true;
+        }
+
+        if
+        (
+            (
+                solverPerfThetaY.initialResidual() < solutionTol()
+             && resThetaY < solutionTol()
+            )
+         || solverPerfThetaY.initialResidual() < alternativeTol()
+         || resThetaY < alternativeTol()
+        )
+        {
+            convergedThetaY = true;
+        }
+
+        if
+        (
+            (
+            //     solverPerfw.initialResidual() < solutionTol()
+            //  && 
+             residualw < solutionTol()
+            )
+        //  || solverPerfw.initialResidual() < alternativeTol()
+        //  || residualw < alternativeTol()
         )
         {
             convergedw = true;
         }
 
 
-        if (convergedM && convergedw)
+        if (convergedM && convergedThetaX && convergedThetaY && convergedw)
         {
             Info<< "    The residuals have converged" << endl;
             converged = true;
@@ -140,19 +197,24 @@ bool kirchhoffRotationalPlateSolid::converged
     // Print residual information
     if (iCorr == 0)
     {
-        Info<< "    Corr, res (M & w), relRes (M & w), matRes, iters (M & w)"
+        Info<< "    Corr, solnRes (M & thetaX & thetaY), relRes (M  & thetaX & thetaY & w), iters (M & thetaX & thetaY)"
             << endl;
     }
     else if (iCorr % infoFrequency() == 0 || converged)
     {
         Info<< "    " << iCorr
             << ", " << solverPerfM.initialResidual()
-            << ", " << solverPerfw.initialResidual()
-            << ", " << residualM
+            << ", " << solverPerfThetaX.initialResidual()
+            << ", " << solverPerfThetaY.initialResidual()
+            << ", " << tab << residualM
+            << ", " << resThetaX
+            << ", " << resThetaY
             << ", " << residualw
-            << ", " << materialResidual
-            << ", " << solverPerfM.nIterations()
-            << ", " << solverPerfw.nIterations() << endl;
+            // << ", " << materialResidual
+            << ", " << tab << solverPerfM.nIterations()
+            << ", " << solverPerfThetaX.nIterations()
+            << ", " << solverPerfThetaY.nIterations()
+            << endl;
 
         if (converged)
         {
@@ -640,11 +702,13 @@ bool kirchhoffRotationalPlateSolid::evolve()
         int iCorr = 0;
 #ifdef OPENFOAM_NOT_EXTEND
         SolverPerformance<scalar> solverPerfM;
-        SolverPerformance<scalar> solverPerfw;
+        SolverPerformance<scalar> solverPerfThetaX;
+        SolverPerformance<scalar> solverPerfThetaY;
         SolverPerformance<scalar>::debug = 0;
 #else
         lduSolverPerformance solverPerfM;
-        lduSolverPerformance solverPerfw;
+        lduSolverPerformance solverPerfThetaX;
+        lduSolverPerformance solverPerfThetaY;
         blockLduMatrix::debug = 0;
 #endif
 
@@ -977,18 +1041,18 @@ bool kirchhoffRotationalPlateSolid::evolve()
             );
 
         
-            Info<< "*-----------------------------------*" << nl
-            << "iCorr " << nl << iCorr << nl
+            // Info<< "*-----------------------------------*" << nl
+            // << "iCorr " << nl << iCorr << nl
             // << "theta X source " << thetaXEqn.source() << nl 
             // << "Le & " << nl << (Le & (mag(rVec.component(0))*gradMEdge)) << nl
             // << "fac::edgeIntegrate " << nl << fac::edgeIntegrate(Le & (mag(rVec.component(0))*gradMEdge)) << nl
             // << "mesh Le " << aMesh_.Le() << nl 
             // << "rVec " << rVec << nl 
             // << "*---------------------------------------*" << nl
-            << endl;
+            // << endl;
 
             // Solve the linear system
-            thetaXEqn.solve();
+            solverPerfThetaX = thetaXEqn.solve();
             thetaX_.relax();
 
             // gradThetaX_ = fac::grad(thetaX_);
@@ -1004,7 +1068,7 @@ bool kirchhoffRotationalPlateSolid::evolve()
             );
 
             // Solve the linear system
-            thetaYEqn.solve();
+            solverPerfThetaY = thetaYEqn.solve();
             thetaY_.relax();
 
             // For now, update gradThetaX and gradThetaY after solving
@@ -1176,8 +1240,18 @@ bool kirchhoffRotationalPlateSolid::evolve()
         }
         while
         (
-            // !converged(iCorr, solverPerfM, solverPerfw, M_, w_)
-            // && 
+            !converged
+            (
+                iCorr, 
+                solverPerfM, 
+                solverPerfThetaX, 
+                solverPerfThetaY, 
+                M_,
+                thetaX_,
+                thetaY_, 
+                w_
+            )
+            && 
             ++iCorr < nCorr()
         );
 
