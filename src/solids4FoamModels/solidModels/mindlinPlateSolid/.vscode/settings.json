@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "kirchhoffPlateSolid.C": "cpp",
+        "kirchhoffRotationalPlateSolid.C": "cpp",
+        "mindlinPlateSolidTemplates.C": "cpp",
+        "mindlinPlateSolid.C": "cpp"
+    }
+}
