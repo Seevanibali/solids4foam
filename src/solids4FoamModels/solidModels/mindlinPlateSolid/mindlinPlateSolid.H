@@ -102,6 +102,9 @@ class mindlinPlateSolid
         //- Angle of rotation vector volume field for visualisation
         volVectorField thetaVf_;
 
+        //- Gradient of theta vector field
+        areaTensorField gradTheta_;
+
         //- Vector M with x-component Mxx and y-component Myy
         // areaVectorField M_;
 

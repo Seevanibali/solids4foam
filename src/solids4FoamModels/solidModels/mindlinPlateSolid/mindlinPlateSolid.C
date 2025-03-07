@@ -452,6 +452,19 @@ mindlinPlateSolid::mindlinPlateSolid
         mesh(),
         dimensionedVector("zero", dimless, vector::zero)
     ),
+    gradTheta_
+    (
+        IOobject
+        (
+            "grad(" + theta_.name() + ")",
+            runTime.timeName(),
+            mesh(),
+            IOobject::NO_READ,   
+            IOobject::AUTO_WRITE 
+        ),
+        aMesh_,
+        dimensionedTensor("zero", dimLength/dimArea, tensor::zero)
+    ),
     MVf_
     (
         IOobject
@@ -734,6 +747,9 @@ bool mindlinPlateSolid::evolve()
 
             // Relax theta fields
             theta_.relax();
+
+            // Gradient of theta
+            gradTheta_ = fac::grad(theta_);
         }
         while
         (
@@ -750,8 +766,7 @@ bool mindlinPlateSolid::evolve()
         );
 
         // Calculation of moment vector fields
-        const areaTensorField gradTheta(fac::grad(theta_));
-        const tensorField& gradThetaI = gradTheta.internalField();
+        const tensorField& gradThetaI = gradTheta_.internalField();
 
         areaVectorField M
         (
@@ -808,7 +823,7 @@ bool mindlinPlateSolid::evolve()
         // Evaluate Mxx and Myy for all the boundary patches
         forAll(M.boundaryField(), patchI)
         {
-            const faPatchTensorField& pGradTheta = gradTheta.boundaryField()[patchI];
+            const faPatchTensorField& pGradTheta = gradTheta_.boundaryField()[patchI];
             faPatchVectorField& pM = M.boundaryFieldRef()[patchI];
             faPatchScalarField& pMsum = Msum.boundaryFieldRef()[patchI];
 
