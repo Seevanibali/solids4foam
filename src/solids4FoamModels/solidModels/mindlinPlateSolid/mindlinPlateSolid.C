@@ -421,10 +421,10 @@ mindlinPlateSolid::mindlinPlateSolid
     //         "theta",
     //         runTime.timeName(),
     //         mesh(),
-    //         IOobject::NO_READ,   
-    //         IOobject::AUTO_WRITE 
+    //         IOobject::NO_READ,
+    //         IOobject::AUTO_WRITE
     //     ),
-    //     aMesh_, 
+    //     aMesh_,
     //     dimensionedVector("zero", dimless, vector::zero)
     // ),
     theta_
@@ -434,8 +434,8 @@ mindlinPlateSolid::mindlinPlateSolid
             "theta",
             runTime.timeName(),
             mesh(),
-            IOobject::MUST_READ,   
-            IOobject::AUTO_WRITE 
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
         ),
         aMesh_
     ),
@@ -459,8 +459,8 @@ mindlinPlateSolid::mindlinPlateSolid
             "MVf",
             runTime.timeName(),
             mesh(),
-            IOobject::NO_READ,   
-            IOobject::AUTO_WRITE 
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
         ),
         mesh(),
         dimensionedVector("zero", dimForce, vector::zero)
@@ -520,13 +520,13 @@ mindlinPlateSolid::mindlinPlateSolid
         theta_[cellI] = vector(thetaX_[cellI],thetaY_[cellI], 0.0);
     }
 
-    forAll(theta_.boundaryField(), patchI) 
+    forAll(theta_.boundaryField(), patchI)
     {
         faPatchVectorField& pTheta = theta_.boundaryFieldRef()[patchI];
-        const faPatchScalarField& pThetaX = thetaX_.boundaryField()[patchI];   
-        const faPatchScalarField& pThetaY = thetaY_.boundaryField()[patchI];   
+        const faPatchScalarField& pThetaX = thetaX_.boundaryField()[patchI];
+        const faPatchScalarField& pThetaY = thetaY_.boundaryField()[patchI];
 
-        forAll(pTheta, edgeI) 
+        forAll(pTheta, edgeI)
         {
             pTheta[edgeI] = vector(pThetaX[edgeI], pThetaY[edgeI], 0);
         }
@@ -542,11 +542,11 @@ mindlinPlateSolid::mindlinPlateSolid
     torsionalStiffness_ = 0.5*(1 - nu_)*bendingStiffness_;
     shearStrainStiffness_ = shearCorrectionFactor_*0.5*E_*h_/(1 + nu_);
 
-    Info<< "Plate mechanical properties\n" 
+    Info<< "Plate mechanical properties\n"
         << "Bending Stiffness\n" << bendingStiffness_ << "\n"
         << "\nTorsional Stiffness\n" << torsionalStiffness_ << "\n"
-        << "\nShear strain stiffness\n" << shearStrainStiffness_ 
-        << endl;  
+        << "\nShear strain stiffness\n" << shearStrainStiffness_
+        << endl;
 }
 
 
@@ -576,7 +576,7 @@ bool mindlinPlateSolid::evolve()
 
         Info<< "Solving the Mindlin (thick plates) equation for primary variables w, thetaX, thetaY" << endl;
 
-        // Read the time scheme from the test case 
+        // Read the time scheme from the test case
         // WRONG! It is reading from system/fvScehemes, bu we need to read from system/faSchemes
         // const word ddtSchemeName(mesh().ddtSchemes());
         // Read ddtScheme name from system/faSchemes
@@ -601,22 +601,26 @@ bool mindlinPlateSolid::evolve()
             (aMesh_.d2dt2Schemes().lookup("default"))
         );
 
-        WarningIn("evolve() function in mindlin (thick) plate solid model")<< nl 
-            << "d2dt2Scheme in system/faSchemes cannot take steadyState as a valid keyword!" << nl 
+        WarningIn("evolve() function in mindlin (thick) plate solid model")<< nl
+            << "d2dt2Scheme in system/faSchemes cannot take steadyState as a valid keyword!" << nl
             << "If you want plate-case to be solved for steady state condition, "
             << "set ddtScheme to be steadyState instead!! " << endl;
-     
-        
+
+
         // Store the previous iteration values for computing source vector
         // thetaX_.storePrevIter();
         // thetaY_.storePrevIter();
         // gradW_.storePrevIter();
 
-        Info<< "\nUsing segregated approach to solve for w, thetaX, and thetaY eqns " 
+        Info<< "\nUsing segregated approach to solve for w, thetaX, and thetaY eqns "
             << "separately and iteratively update them!" << endl;
 
+        // Philip testing
+        const scalar alphaW(readScalar(solidModelDict().lookup("alphaW")));
+        const scalar alphaTheta(readScalar(solidModelDict().lookup("alphaTheta")));
+
         do
-        { 
+        {
             // Store fields for under-relaxation and residual calculation
             w_.storePrevIter();
 
@@ -624,13 +628,37 @@ bool mindlinPlateSolid::evolve()
             // Also, "==" complains so we will move all terms to left
             faScalarMatrix wEqn
             (
-                fam::laplacian(shearStrainStiffness_, w_) 
-                + fac::div(shearStrainStiffness_*theta_) 
-                + p_
+                fam::laplacian(shearStrainStiffness_, w_)
+              + fac::div(shearStrainStiffness_*theta_)
+              + p_
             );
 
+            // Add stabilisation term
+            // laplacian(w) is mathematically the same as div(grad(w)) but
+            // numerically different for a given mesh (but they converge to the
+            // same answer)
+            // It may be possible that laplacian(w) is more likely to "lock" in
+            // this formulation, while div(grad(w)) may not. As we do not have
+            // fam::div(grad(w)), the implicit component must be fam::laplacian
+            // but we can change the explicit components such that the laplacian
+            // is replaced by div(grad(w)) at convergence
+            // Below I add a blending factor alphaW to let us decide how much of
+            // div(grad(w)) to use. alphaW = 1 means use all div(grad(w)), while
+            // alphaW = 0 means use all laplacian(w). In between values use a
+            // blend
+            // TODO: we should store gradW to avoid repeatedly calculating it!
+            if (alphaW > 0.0)
+            {
+                wEqn +=
+                    alphaW
+                   *(
+                        fac::div(shearStrainStiffness_*fac::grad(w_))
+                      - fac::laplacian(shearStrainStiffness_, w_)
+                    );
+            }
+
             // d2dt2 can only take Euler as keyword, but if the user wants it to
-            // be steadyState, it cannot happen. Hence check for ddtScheme 
+            // be steadyState, it cannot happen. Hence check for ddtScheme
             // and add inertial terms for not steady state!!
             if(ddtSchemeName != "steadyState")
             {
@@ -654,17 +682,47 @@ bool mindlinPlateSolid::evolve()
             // Store fields for under-relaxation and residual calculation
             theta_.storePrevIter();
 
-            // Solve theta equation 
+            // Solve theta equation
             faVectorMatrix thetaEqn
             (
-                fam::laplacian(torsionalStiffness_, theta_) 
-                + 0.5*bendingStiffness_*(1 + nu_)*fac::grad(fac::div(theta_))
-                - shearStrainStiffness_*(fac::grad(w_)) 
-                - fam::Sp(shearStrainStiffness_, theta_)
+                // div(grad.T) has the same diagonal entry as div(grad) so we
+                // could boost our Laplacian diagonal and then explicitly
+                // subtract the difference. From some quick tests, it seems
+                // that this does not have much effect (this will be true if the
+                // bendingStiffness is much less than the torsionalStiffness
+                // We have a few ways to write these two terms:
+                // Option 1
+                fam::laplacian(torsionalStiffness_, theta_)
+              + 0.5*bendingStiffness_*(1 + nu_)*fac::grad(fac::div(theta_))
+              //   // Option 2
+              //   fam::laplacian(torsionalStiffness_ + 0.5*bendingStiffness_*(1 + nu_), theta_)
+              // - 0.5*bendingStiffness_*(1 + nu_)*fac::laplacian(theta_)
+              // + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
+              //   // Option 3
+              //   fam::laplacian(torsionalStiffness_ + 0.5*bendingStiffness_*(1 + nu_), theta_)
+              // - 0.5*bendingStiffness_*(1 + nu_)*fac::div(fac::grad(theta_))
+              // + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
+
+                // Other terms
+              - shearStrainStiffness_*(fac::grad(w_))
+              - fam::Sp(shearStrainStiffness_, theta_)
             );
 
+            // Add stabilisation term
+            // Same ideas as alphaW. From initial testing, these terms seem to
+            // have a negligible effect, so alphaTheta = 0 is probably fine
+            if (alphaTheta > 0.0)
+            {
+                thetaEqn +=
+                    alphaTheta
+                   *(
+                        fac::div(torsionalStiffness_*fac::grad(theta_))
+                      - fac::laplacian(torsionalStiffness_, theta_)
+                    );
+            }
+
             // d2dt2 can only take Euler as keyword, but if the user wants it to
-            // be steadyState, it cannot happen. Hence check for ddtScheme 
+            // be steadyState, it cannot happen. Hence check for ddtScheme
             // and add inertial terms for not steady state!!
             if(ddtSchemeName != "steadyState")
             {
@@ -675,26 +733,26 @@ bool mindlinPlateSolid::evolve()
             solverPerfTheta = thetaEqn.solve();
 
             // Relax theta fields
-            theta_.relax();     
+            theta_.relax();
         }
         while
         (
             !converged
             (
-                iCorr, 
-                solverPerfw, 
-                solverPerfTheta, 
+                iCorr,
+                solverPerfw,
+                solverPerfTheta,
                 w_,
                 theta_
             )
-            && 
+            &&
             ++iCorr < nCorr()
         );
 
         // Calculation of moment vector fields
         const areaTensorField gradTheta(fac::grad(theta_));
         const tensorField& gradThetaI = gradTheta.internalField();
-        
+
         areaVectorField M
         (
             IOobject
@@ -702,8 +760,8 @@ bool mindlinPlateSolid::evolve()
                 "M",
                 runTime().timeName(),
                 mesh(),
-                IOobject::NO_READ,   
-                IOobject::NO_WRITE 
+                IOobject::NO_READ,
+                IOobject::NO_WRITE
             ),
             aMesh_,
             dimensionedVector("zero", dimForce, vector::zero)
@@ -716,37 +774,37 @@ bool mindlinPlateSolid::evolve()
                 "Msum",
                 runTime().timeName(),
                 mesh(),
-                IOobject::NO_READ,   
-                IOobject::NO_WRITE 
+                IOobject::NO_READ,
+                IOobject::NO_WRITE
             ),
             aMesh_,
             dimensionedScalar("zero", dimForce, 0.0)
         );
-        
+
         // Evaluate Mxx and Myy for all the internal fields
         forAll(M.internalField(), cellI)
         {
-            M[cellI].component(vector::X) = 
+            M[cellI].component(vector::X) =
                 bendingStiffness_.value()
                 *(
                     gradThetaI[cellI].component(tensor::XX)
                     + nu_.value()*gradThetaI[cellI].component(tensor::YY)
                  );
 
-            M[cellI].component(vector::Y) = 
+            M[cellI].component(vector::Y) =
                 bendingStiffness_.value()
                 *(
                     gradThetaI[cellI].component(tensor::YY)
                     + nu_.value()*gradThetaI[cellI].component(tensor::XX)
                  );
-            
-            Msum[cellI] = 
+
+            Msum[cellI] =
                 (
                     M[cellI].component(vector::X) + M[cellI].component(vector::Y)
                 )/(1 + nu_.value());
         }
 
-        
+
         // Evaluate Mxx and Myy for all the boundary patches
         forAll(M.boundaryField(), patchI)
         {
@@ -756,27 +814,27 @@ bool mindlinPlateSolid::evolve()
 
             forAll(pM, edgeI)
             {
-                pM[edgeI].component(vector::X) = 
+                pM[edgeI].component(vector::X) =
                     bendingStiffness_.value()
                     *(
                         pGradTheta[edgeI].component(tensor::XX)
                         + nu_.value()*pGradTheta[edgeI].component(tensor::YY)
                     );
 
-                pM[edgeI].component(vector::Y) = 
+                pM[edgeI].component(vector::Y) =
                     bendingStiffness_.value()
                     *(
                         pGradTheta[edgeI].component(tensor::YY)
                         + nu_.value()*pGradTheta[edgeI].component(tensor::XX)
                     );
-                
-                pMsum[edgeI] = 
+
+                pMsum[edgeI] =
                 (
                     pM[edgeI].component(vector::X) + pM[edgeI].component(vector::Y)
                 )/(1 + nu_.value());
             }
         }
-    
+
         // Map area fields to vol fields
         mapAreaFieldToSingleLayerVolumeField(w_, wVf_);
         // mapAreaFieldToSingleLayerVolumeField(thetaX_, thetaXVf_);
