@@ -704,17 +704,17 @@ bool mindlinPlateSolid::evolve()
                 // that this does not have much effect (this will be true if the
                 // bendingStiffness is much less than the torsionalStiffness
                 // We have a few ways to write these two terms:
-                // Option 1
-                fam::laplacian(torsionalStiffness_, theta_)
-              + 0.5*bendingStiffness_*(1 + nu_)*fac::grad(fac::div(theta_))
-              //   // Option 2
-              //   fam::laplacian(torsionalStiffness_ + 0.5*bendingStiffness_*(1 + nu_), theta_)
-              // - 0.5*bendingStiffness_*(1 + nu_)*fac::laplacian(theta_)
-              // + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
-              //   // Option 3
-              //   fam::laplacian(torsionalStiffness_ + 0.5*bendingStiffness_*(1 + nu_), theta_)
-              // - 0.5*bendingStiffness_*(1 + nu_)*fac::div(fac::grad(theta_))
-              // + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
+                // Option 1 (Option 1 does not work for h = 1.0, some numerical divergence issues)
+                // fam::laplacian(torsionalStiffness_, theta_)
+                // + 0.5*bendingStiffness_*(1 + nu_)*fac::grad(fac::div(theta_))
+                // Option 2 (This version works)
+                fam::laplacian(torsionalStiffness_ + 0.5*bendingStiffness_*(1 + nu_), theta_)
+                - 0.5*bendingStiffness_*(1 + nu_)*fac::laplacian(theta_)
+                + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
+                // Option 3
+            //     fam::laplacian(torsionalStiffness_ + 0.5*bendingStiffness_*(1 + nu_), theta_)
+            //   - 0.5*bendingStiffness_*(1 + nu_)*fac::div(fac::grad(theta_))
+            //   + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
 
                 // Other terms
               - shearStrainStiffness_*(fac::grad(w_))
