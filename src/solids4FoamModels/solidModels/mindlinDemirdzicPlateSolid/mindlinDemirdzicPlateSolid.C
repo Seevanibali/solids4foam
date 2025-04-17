@@ -557,6 +557,12 @@ bool mindlinDemirdzicPlateSolid::evolve()
     // Create volume-to surface mapping object
     volSurfaceMapping vsm(aMesh_);
 
+    // Lookup flag for using a compact stencil for the edge normal gradients
+    const Switch compactEdgeNormalGrad
+    (
+        solidModelDict().lookup("compactEdgeNormalGrad")
+    );
+
     // Mesh update loop
     do
     {
@@ -765,7 +771,15 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // \int_{dl} Gamma (x - x_P) (grad(w)  - theta) \cdot n dl
             // \Sum_e Gamma (x_e - x_P) (grad(w)_e  - theta_e) \cdot n_e l_e
 
-            const edgeVectorField gradWEdge(fac::interpolate(gradW_));
+            edgeVectorField gradWEdge(fac::interpolate(gradW_));
+
+            if (compactEdgeNormalGrad)
+            {
+                const edgeScalarField lnGradWEdge(fac::lnGrad(w_));
+                gradWEdge +=
+                    lnGradWEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradWEdge);
+            }
+
             const vectorField gradWEdgeI(gradWEdge.internalField());
 
             const scalarField nx(edgeBiNormal.internalField().component(vector::X));
