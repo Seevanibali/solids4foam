@@ -583,14 +583,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
 
         Info<< "Solving the Mindlin (thick plates) equation for primary variables w, thetaX, thetaY - Demirdzic's Approach" << endl;
 
-        // Store the previous iteration values for computing source vector
-        w_.storePrevIter();
-        thetaX_.storePrevIter();
-        thetaY_.storePrevIter();
-        gradW_.storePrevIter();
-        gradThetaX_.storePrevIter();
-        gradThetaY_.storePrevIter();
-
         Info<< "\nUsing segregated approach to solve for w, thetaX, and thetaY eqns "
             << "separately and iteratively update them!" << endl;
 
@@ -624,31 +616,53 @@ bool mindlinDemirdzicPlateSolid::evolve()
         // const DimensionedField<scalar, areaMesh>& Sf(aMesh_.S());
         const edgeScalarField& le(aMesh_.magLe());
         const faBoundaryMesh& faBouMesh(aMesh_.boundary());
-
-        // Constructing the theta vector from components
-        areaVectorField theta
-        (
-            IOobject
-            (
-                "theta",
-                runTime().timeName(),
-                mesh(),
-                IOobject::NO_READ,
-                IOobject::NO_WRITE
-            ),
-            // Combine components using unit vectors
-            thetaX_ * vector(1, 0, 0)
-            + thetaY_ * vector(0, 1, 0)
-            + dimensionedScalar("zero", thetaX_.dimensions(), 0.0) * vector(0, 0, 1) 
-        );
-
-        // Theta vector at edge centres
-        const edgeVectorField thetaEdge(fac::interpolate(theta));
         
         do
         {
+            // Store the previous iteration values for computing source vector
+            // The storePrevIter values are also brought inside this do-loop
+            // Should not make much difference.
+
+            w_.storePrevIter();
+            thetaX_.storePrevIter();
+            thetaY_.storePrevIter();
+            gradW_.storePrevIter();
+            gradThetaX_.storePrevIter();
+            gradThetaY_.storePrevIter();
+
+            // NOTE!! - This theta construction was outside the do-loop in
+            // previous commit. So, the theta contribution was not getting
+            // added to w equation. But now that I add theta contribution
+            // the solver is diverging. Do I need more stabilisation terms?
+            // CHECK WITH IVAN
+
+            // Constructing the theta vector from components
+            areaVectorField theta
+            (
+                IOobject
+                (
+                    "theta",
+                    runTime().timeName(),
+                    mesh(),
+                    IOobject::NO_READ,
+                    IOobject::NO_WRITE
+                ),
+                // Combine components using unit vectors
+                thetaX_ * vector(1, 0, 0)
+                + thetaY_ * vector(0, 1, 0)
+                + dimensionedScalar("zero", thetaX_.dimensions(), 0.0) * vector(0, 0, 1) 
+            );
+
+            // Theta vector at edge centres
+            const edgeVectorField thetaEdge(fac::interpolate(theta));
+
             // Solve w equation
             // Also, "==" complains so we will move all terms to left
+            // QUESTION - Is fac::div(shearStrainStiffness_*theta)
+            // equivalent to physically looping over edges and putting
+            // theta contributions interpolated at the edges in the wEqn?
+            // I think it is coorect because that is how fac::div
+            // is calculated, but need to CHECK WITH IVAN.
             faScalarMatrix wEqn
             (
                 fam::laplacian(shearStrainStiffness_, w_)
@@ -681,9 +695,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
 
             // Update the gradient of displacement
             gradW_ = fac::grad(w_);
-
-            
-            // Info<< "gradW.fluct " << gradW_ - fac::average(fac::interpolate(gradW_)) << endl;
 
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
@@ -719,6 +730,13 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     );
             }
 
+            // NOTE!! - How to get the moment arm (x - x_P) and (y - y_P)?
+            // For an orthogonal uniform mesh, the above terms are 
+            // half of cell to cell distances and are the equal when we
+            // look from the owner and neighbour side. The only difference
+            // is that the sign of (x - x_P) is positive for owner and
+            // negative for neighbour. CHECK WITH IVAN?
+
             // Initialise the inverse of delta (cell to cell distance)
             const edgeScalarField invDeltaCoeffs
             (
@@ -740,8 +758,9 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // \int_{dSz} (x - x_p) p ds - moment arm due to pressure term
 
 
-            // Firstly, it doe not make sese how to multiply (x_e - x_P) 
+            // Firstly, it does not make sense how to multiply (x_e - x_P) 
             // that is defined at an edge with cell centre pressure field
+            // CHECK WITH IVAN..
             
             // Also, according to Torlak, this term is zero if 
             // coordinate system is assumed at cell centre.
@@ -756,23 +775,24 @@ bool mindlinDemirdzicPlateSolid::evolve()
             /*---------------------------------------------------------------*/
 
             // SHEAR FORCE MOMENT ARM TERM 
-            // The last term of s_{\phi \l} term of thetaX and thetaY variables
+            // The last s_{\phi \l} term of thetaX and thetaY variables
             // in Demirdzic 1997 plate paper.
+            // \int_{dl} Gamma (x - x_P) (grad(w) - theta) \cdot n dl
+            // \Sum_e Gamma (x_e - x_P) (grad(w)_e - theta_e) \cdot n_e l_e
 
-            // How to get (x_e - x_P) for every edge 'e'? This value is 
+            // How to get (x_e - x_P) for every edge 'e'? This value is
             // different if looked from the owner side or neighbour side
             // and also contains the SIGN!!!
 
             // BUT: for orthogonal uniform mesh, it is same. Use that for now!!
             // | (x_e - x_P) | = 0.5*inv(mesh.deltaCoeffs()) for internal edges
-            // SIGN: (x_e - x_P) \cdot n_e will always be positive as they
-            // cancel each other's signs.
 
-            // \int_{dl} Gamma (x - x_P) (grad(w)  - theta) \cdot n dl
-            // \Sum_e Gamma (x_e - x_P) (grad(w)_e  - theta_e) \cdot n_e l_e
+            // SIGN: (x_e - x_P) \cdot n_e will always be positive as they
+            // cancel each other's signs. CHECK WITH IVAN AGAIN.
 
             edgeVectorField gradWEdge(fac::interpolate(gradW_));
 
+            // Avoid oscillations in gradient calculations
             if (compactEdgeNormalGrad)
             {
                 const edgeScalarField lnGradWEdge(fac::lnGrad(w_));
@@ -789,7 +809,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
 
             // Shear strain constant after removing dimension (Gamma = G*h)
             const scalar Gamma(shearStrainStiffness_.value());
-            
+
             // Loop over internal edges
             forAll(thetaXEqn.upper(), eI)
             {
@@ -798,11 +818,14 @@ bool mindlinDemirdzicPlateSolid::evolve()
                 // Sign for owner and neighbour contribution is same because
                 // (x_e - x_P) \cdot n_e is always positive. The negative sign
                 // due to the normal is cancelled by the sign of (x_e - x_P)
+                // CHECK WITH IVAN AGAIN.
 
                 // For internal edges uniform orthogonal mesh,
                 // (x_e - x_P) = 0.5*invDeltaCoeffs
 
-                // Terms to added to RHS source, hence, it is all minus sign
+                // Terms are added to RHS source. So, need to subtract from source
+                // Also, the neighbour contribution sign is same as owner.
+                // Hence, it is all minus sign
                 // "source -="
 
                 // thetaX part
@@ -875,14 +898,23 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // GRADIENT THETA TERMS OF THE SOURCE
             // The first three terms of s_{\phi \l} term of thetaX and thetaY variables
             // in Demirdzic 1997 plate paper.
+            
+            // Interpolate grad(thetaX), grad(thetaY) to edges
+            edgeVectorField gradthetaXEdge(fac::interpolate(gradThetaX_));
+            edgeVectorField gradthetaYEdge(fac::interpolate(gradThetaY_));
 
-            // Interpolate grad(thetaX), grad(thetaY) to edges (Initial stage)
-            // NOTE: Discussions with Philip on lnGrad and how to avoid
-            // (maybe) checkerboarding did happen but
-            // Not clear how to implement it yet!!
+            // Avoid oscillations in gradient calculations
+            if (compactEdgeNormalGrad)
+            {
+                const edgeScalarField lnGradThetaXEdge(fac::lnGrad(thetaX_));
+                const edgeScalarField lnGradThetaYEdge(fac::lnGrad(thetaY_));
 
-            const edgeVectorField gradthetaXEdge(fac::interpolate(gradThetaX_));
-            const edgeVectorField gradthetaYEdge(fac::interpolate(gradThetaY_));
+                gradthetaXEdge +=
+                    lnGradThetaXEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradthetaXEdge);
+
+                gradthetaYEdge +=
+                    lnGradThetaYEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradthetaYEdge);
+            }
 
             // Extracting individual components of gradTheta at edges
             const edgeScalarField gradThXX
@@ -941,7 +973,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // Contribution to internal edges
             // The terms when put in source (RHS) will change
             // signs. So the owner contributions are negative
-            // and neighbour is positive.
+            // and neighbour is positive. // CHECK WITH IVAN??
             forAll(thetaXEqn.upper(), eI)
             {
                 // thetaX part
@@ -1039,6 +1071,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                         );
                 }
             }
+            
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
             // Solve the linear system
