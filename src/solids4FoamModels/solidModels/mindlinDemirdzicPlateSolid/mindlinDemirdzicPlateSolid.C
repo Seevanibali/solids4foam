@@ -597,18 +597,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
         // "calculated (0 0 0)" which is not correct!!
         // Constructing the unit edgeBiNormal instead
         // For 2-D meshes, aMesh_.edgeNormals() gives unit vector in z-direction
-        edgeVectorField edgeBiNormal
-        (
-            IOobject
-            (
-                "edgeBiNormal",
-                runTime().timeName(),
-                mesh(),
-                IOobject::NO_READ,
-                IOobject::NO_WRITE
-            ),
-            aMesh_.Le()/aMesh_.magLe()
-        );
+        edgeVectorField edgeBiNormal("edgeBiNormal", aMesh_.Le()/aMesh_.magLe());
 
         // Mesh information required
         const labelList& own(aMesh_.owner());
@@ -944,7 +933,8 @@ bool mindlinDemirdzicPlateSolid::evolve()
                         }
                         else if (nei[edgeI] == cellI)
                         {
-                            thetaXEqn.source()[cellI] -=
+                            // Note: we use "+=" as nx and ny need to be flipped
+                            thetaXEqn.source()[cellI] +=
                                 Gamma*leI[edgeI]
                                *(
                                     gradWEdge.internalField()[edgeI].component(vector::X)
@@ -955,7 +945,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                                   - cellCentres[cellI].component(vector::X) 
                                 )*nx[edgeI];
 
-                            thetaYEqn.source()[cellI] -=
+                            thetaYEqn.source()[cellI] +=
                                 Gamma*leI[edgeI]
                                *(
                                     gradWEdge.internalField()[edgeI].component(vector::Y)
