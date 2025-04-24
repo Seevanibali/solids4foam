@@ -122,12 +122,12 @@ bool mindlinDemirdzicPlateSolid::converged
         if
         (
             (
-                // solverPerfw.initialResidual() < solutionTol()
-            //  && 
+                solverPerfw.initialResidual() < solutionTol()
+             &&
                 residualw < solutionTol()
             )
-        //  || solverPerfw.initialResidual() < alternativeTol()
-        //  || residualw < alternativeTol()
+         || solverPerfw.initialResidual() < alternativeTol()
+         || residualw < alternativeTol()
         )
         {
             convergedw = true;
@@ -136,12 +136,12 @@ bool mindlinDemirdzicPlateSolid::converged
         if
         (
             (
-                // solverPerfThetaX.initialResidual() < solutionTol()
-            //  && 
+                solverPerfThetaX.initialResidual() < solutionTol()
+             &&
                 resThetaX < solutionTol()
             )
-        //  || solverPerfThetaX.initialResidual() < alternativeTol()
-        //  || resThetaX < alternativeTol()
+         || solverPerfThetaX.initialResidual() < alternativeTol()
+         || resThetaX < alternativeTol()
         )
         {
             convergedThetaX = true;
@@ -150,21 +150,24 @@ bool mindlinDemirdzicPlateSolid::converged
         if
         (
             (
-                // solverPerfThetaY.initialResidual() < solutionTol()
-            //  && 
+                solverPerfThetaY.initialResidual() < solutionTol()
+             &&
                 resThetaY < solutionTol()
             )
-        //  || solverPerfThetaY.initialResidual() < alternativeTol()
-        //  || resThetaY < alternativeTol()
+         || solverPerfThetaY.initialResidual() < alternativeTol()
+         || resThetaY < alternativeTol()
         )
         {
             convergedThetaY = true;
         }
 
-        if (convergedw && (convergedThetaX && convergedThetaY))
+        if (convergedw)
         {
-            Info<< "    The residuals have converged" << endl;
-            converged = true;
+            if (convergedThetaX && convergedThetaY)
+            {
+                Info<< "    The residuals have converged" << endl;
+                converged = true;
+            }
         }
     }
 
@@ -392,8 +395,8 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
             "grad(" + w_.name() + ")",
             runTime.timeName(),
             mesh(),
-            IOobject::NO_READ,   
-            IOobject::AUTO_WRITE 
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
         ),
         aMesh_,
         dimensionedVector("zero", dimless, vector::zero)
@@ -480,8 +483,8 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
             "grad(" + thetaX_.name() + ")",
             runTime.timeName(),
             mesh(),
-            IOobject::NO_READ,   
-            IOobject::AUTO_WRITE 
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
         ),
         aMesh_,
         dimensionedVector("zero", dimLength/dimArea, vector::zero)
@@ -493,8 +496,8 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
             "grad(" + thetaY_.name() + ")",
             runTime.timeName(),
             mesh(),
-            IOobject::NO_READ,   
-            IOobject::AUTO_WRITE 
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
         ),
         aMesh_,
         dimensionedVector("zero", dimLength/dimArea, vector::zero)
@@ -503,7 +506,7 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
     E_("zero", dimPressure, 0.0),
     nu_("zero", dimless, 0.0),
     h_(solidModelDict().lookup("plateThickness")),
-    shearCorrectionFactor_(solidModelDict().getOrDefault<scalar>("shearCorrectionFactor", 0.8333)),
+    // shearCorrectionFactor_(solidModelDict().getOrDefault<scalar>("shearCorrectionFactor", 0.8333)),
     bendingStiffness_("zero", dimPressure*dimVolume, 0.0),
     // torsionalStiffness_("zero", dimPressure*dimVolume, 0.0),
     shearStrainStiffness_("zero",dimForce/dimLength, 0.0),
@@ -537,9 +540,11 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
     nu_ = mech.nu();
     bendingStiffness_ = E_*pow(h_, 3)/(12*(1 - pow(nu_, 2)));
     // torsionalStiffness_ = 0.5*(1 - nu_)*bendingStiffness_;
-    shearStrainStiffness_ = shearCorrectionFactor_*0.5*E_*h_/(1 + nu_);
+    // shearStrainStiffness_ = shearCorrectionFactor_*0.5*E_*h_/(1 + nu_);
+    shearStrainStiffness_ = 0.5*E_*h_/(1 + nu_);
 
     Info<< "Plate mechanical properties\n"
+        << "Poisson ratio \n" << nu_ << "\n"
         << "Bending Stiffness\n" << bendingStiffness_ << "\n"
         // << "\nTorsional Stiffness\n" << torsionalStiffness_ << "\n"
         << "\nShear strain stiffness\n" << shearStrainStiffness_
@@ -563,6 +568,11 @@ bool mindlinDemirdzicPlateSolid::evolve()
         solidModelDict().lookup("compactEdgeNormalGrad")
     );
 
+    // Flag for printing statements
+    const Switch printStatements
+    (
+        solidModelDict().lookup("printStatements")
+    );
     // Mesh update loop
     do
     {
@@ -590,6 +600,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
         const scalar alphaW(readScalar(solidModelDict().lookup("alphaW")));
         const scalar alphaTheta(readScalar(solidModelDict().lookup("alphaTheta")));
 
+
         // Note: To get in-plane normal unit vectors to an edge, aMesh_.Le()
         // can be used with unit norm
         // Do not use aMesh.unitLe() member from faMesh, since the
@@ -607,17 +618,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
         const faBoundaryMesh& faBouMesh(aMesh_.boundary());
         const edgeVectorField& edgeCentres(aMesh_.edgeCentres());
         const areaVectorField& cellCentres(aMesh_.areaCentres());
-        // const labelList& edgeOwn(aMesh_.edgeOwner());
-        // const labelList& edgeNei(aMesh_.edgeNeighbour());
-
-        // NOTE!! - This theta construction was outside the do-loop in
-        // previous commit. So, the theta contribution was not getting
-        // added to w equation. But now that I add theta contribution
-            // the solver is diverging. Do I need more stabilisation terms?
-            // CHECK WITH IVAN
-        
-        do
-        {
 
         // Constructing the theta vector from components
         areaVectorField theta
@@ -631,17 +631,22 @@ bool mindlinDemirdzicPlateSolid::evolve()
                 IOobject::NO_WRITE
             ),
             // Combine components using unit vectors
-            thetaX_ * vector(1, 0, 0)
-            + thetaY_ * vector(0, 1, 0)
-            + dimensionedScalar("zero", thetaX_.dimensions(), 0.0) * vector(0, 0, 1) 
+            thetaX_*vector(1, 0, 0)
+          + thetaY_*vector(0, 1, 0)
+          + dimensionedScalar("zero", thetaX_.dimensions(), 0.0)*vector(0, 0, 1)
         );
 
-        // Theta vector at edge centres
-        const edgeVectorField thetaEdge(fac::interpolate(theta));
-            // Store the previous iteration values for computing source vector
-            // The storePrevIter values are also brought inside this do-loop
-            // Should not make much difference.
 
+        do
+        {
+            // Update the theta field with new thetaX_ and thetaY_
+            theta = thetaX_*vector(1,0,0) + thetaY_*vector(0, 1, 0);
+            // Info<< "thetaX " << thetaX_ << " theta " << theta << endl;
+
+            // Theta vector at edge centres
+            const edgeVectorField thetaEdge(fac::interpolate(theta));
+
+            // Store the previous iteration values for computing source vector
             w_.storePrevIter();
             thetaX_.storePrevIter();
             thetaY_.storePrevIter();
@@ -653,11 +658,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
 
             // Solve w equation
             // Also, "==" complains so we will move all terms to left
-            // QUESTION - Is fac::div(shearStrainStiffness_*theta)
-            // equivalent to physically looping over edges and putting
-            // theta contributions interpolated at the edges in the wEqn?
-            // I think it is coorect because that is how fac::div
-            // is calculated, but need to CHECK WITH IVAN.
             faScalarMatrix wEqn
             (
                 fam::laplacian(shearStrainStiffness_, w_)
@@ -668,7 +668,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // Add stabilisation term
             // laplacian(w) is mathematically the same as div(grad(w)) but
             // numerically different for a given mesh (but they converge to the
-            // TODO: we should store gradW to avoid repeatedly calculating it!
             if (alphaW > 0.0)
             {
                 wEqn +=
@@ -679,7 +678,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     );
             }
 
-            // // Relax the linear system
+            // Relax the linear system
             wEqn.relax();
 
             // Solve the linear system
@@ -701,7 +700,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
             (
                 fam::laplacian(bendingStiffness_, thetaX_)
             );
-            
+
             // Initialise thetaY equation with implicit laplacian terms
             faScalarMatrix thetaYEqn
             (
@@ -726,38 +725,37 @@ bool mindlinDemirdzicPlateSolid::evolve()
             }
 
             // NOTE!! - How to get the moment arm (x - x_P) and (y - y_P)?
-            // For an orthogonal uniform mesh, the above terms are 
+            // For an orthogonal uniform mesh, the above terms are
             // half of cell to cell distances and are the equal when we
             // look from the owner and neighbour side. The only difference
             // is that the sign of (x - x_P) is positive for owner and
             // negative for neighbour. CHECK WITH IVAN?
 
             // Initialise the inverse of delta (cell to cell distance)
-            const edgeScalarField invDeltaCoeffs
-            (
-                IOobject
-                (
-                    "invDeltaCoeffs",
-                    runTime().timeName(),
-                    mesh(),
-                    IOobject::NO_READ,
-                    IOobject::AUTO_WRITE
-                ),
-                1.0/aMesh_.deltaCoeffs()
-            );
+            // const edgeScalarField invDeltaCoeffs
+            // (
+            //     IOobject
+            //     (
+            //         "invDeltaCoeffs",
+            //         runTime().timeName(),
+            //         mesh(),
+            //         IOobject::NO_READ,
+            //         IOobject::AUTO_WRITE
+            //     ),
+            //     1.0/aMesh_.deltaCoeffs()
+            // );
 
-            const scalarField invDeltaI(invDeltaCoeffs.internalField());
+            // const scalarField invDeltaI(invDeltaCoeffs.internalField());
 
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
             // \int_{dSz} (x - x_p) p ds - moment arm due to pressure term
 
 
-            // Firstly, it does not make sense how to multiply (x_e - x_P) 
+            // Firstly, it does not make sense how to multiply (x_e - x_P)
             // that is defined at an edge with cell centre pressure field
             // CHECK WITH IVAN..
-            
-            // Also, according to Torlak, this term is zero if 
+            // Also, according to Torlak, this term is zero if
             // coordinate system is assumed at cell centre.
             // forAll(thetaXEqn.diag(), cI)
             // {
@@ -769,7 +767,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
 
-            // SHEAR FORCE MOMENT ARM TERM 
+            // SHEAR FORCE MOMENT ARM TERM
             // The last s_{\phi \l} term of thetaX and thetaY variables
             // in Demirdzic 1997 plate paper.
             // \int_{dl} Gamma (x - x_P) (grad(w) - theta) \cdot n dl
@@ -796,224 +794,167 @@ bool mindlinDemirdzicPlateSolid::evolve()
             }
 
             const vectorField gradWEdgeI(gradWEdge.internalField());
-
-            const scalarField nx(edgeBiNormal.internalField().component(vector::X));
-            const scalarField ny(edgeBiNormal.internalField().component(vector::Y));
-
             const scalarField leI(le.internalField());
 
-            // Shear strain constant after removing dimension (Gamma = G*h)
-            const scalar Gamma(shearStrainStiffness_.value());
+            // // Shear strain constant after removing dimension (Gamma = G*h)
+            // const scalar Gamma(shearStrainStiffness_.value());
 
-            /*---------------------------------------------------------------*/
-            // APPROACH - 1 (LOOP OVER EDGES)
-            // Loop over internal edges
-            const Switch loopEdgesShearForce
+            // APPROACH 2 (LOOP OVER CELLS and for each cell LOOP over EDGES)
+
+            const edgeVectorField shearForceEdge
             (
-                solidModelDict().lookup("loopEdgesShearForce")
+                shearStrainStiffness_*(gradWEdge - thetaEdge)
             );
 
-            if (loopEdgesShearForce)
+            const vectorField shearForceI(shearForceEdge.internalField());
+            const vectorField edgeBiNormalI(edgeBiNormal.internalField());
+
+            if (printStatements)
             {
-                forAll(thetaXEqn.upper(), eI)
-                {
-                    
-                    // NOTE (check this again):
-                    // Sign for owner and neighbour contribution is same because
-                    // (x_e - x_P) \cdot n_e is always positive. The negative sign
-                    // due to the normal is cancelled by the sign of (x_e - x_P)
-                    // CHECK WITH IVAN AGAIN.
-
-                    // For internal edges uniform orthogonal mesh,
-                    // (x_e - x_P) = 0.5*invDeltaCoeffs
-
-                    // Terms are added to RHS source. So, need to subtract from source
-                    // Also, the neighbour contribution sign is same as owner.
-                    // Hence, it is all minus sign
-                    // "source -="
-
-                    // thetaX part
-                    thetaXEqn.source()[own[eI]] -=
-                        0.5*Gamma*invDeltaI[eI]*leI[eI]
-                       *(
-                            (
-                                gradWEdgeI[eI] - thetaEdge[eI]
-                            ) & edgeBiNormal.internalField()[eI]
-                        );
-
-                    thetaXEqn.source()[nei[eI]] -=
-                        0.5*Gamma*invDeltaI[eI]*leI[eI]
-                       *(
-                            (
-                                gradWEdgeI[eI] - thetaEdge[eI]
-                            ) & edgeBiNormal.internalField()[eI]
-                        );
-
-                    // thetaY part
-                    thetaYEqn.source()[own[eI]] -=
-                        0.5*Gamma*invDeltaI[eI]*leI[eI]
-                       *(
-                            (
-                                gradWEdgeI[eI] - thetaEdge[eI]
-                            ) & edgeBiNormal.internalField()[eI]
-                        );
-
-                    thetaYEqn.source()[nei[eI]] -=
-                        0.5*Gamma*invDeltaI[eI]*leI[eI]
-                       *(
-                            (
-                                gradWEdgeI[eI] - thetaEdge[eI]
-                            ) & edgeBiNormal.internalField()[eI]
-                        );
-                }
-
-                // Loop over boundary edges
-                forAll(thetaX_.boundaryField(), patchI)
-                {
-                    const faePatchVectorField pGradW(gradWEdge.boundaryField()[patchI]);
-                    const faePatchVectorField pThetaEdge(thetaEdge.boundaryField()[patchI]);
-
-                    forAll(thetaX_.boundaryField()[patchI], pEdge)
-                    {
-                        // Boundary cell index
-                        const label bI = faBouMesh[patchI].edgeFaces()[pEdge];
-                        const scalar leB = le.boundaryField()[patchI][pEdge];
-                        const scalar pInvDelta = invDeltaCoeffs.boundaryField()[patchI][pEdge];
-
-                        // For boundary edges uniform orthogonal mesh,
-                        // (x_e - x_P) = invDeltaCoeffs, no 0.5 coeff needed!!
-                        thetaXEqn.source()[bI] -=
-                            Gamma*pInvDelta*leB
-                           *(
-                                (pGradW[pEdge] - pThetaEdge[pEdge])
-                              & edgeBiNormal.boundaryField()[patchI][pEdge]
-                            );
-
-                        thetaYEqn.source()[bI] -=
-                            Gamma*pInvDelta*leB
-                           *(
-                                (pGradW[pEdge] - pThetaEdge[pEdge])
-                              & edgeBiNormal.boundaryField()[patchI][pEdge]
-                            );
-                    }
-                }
+                Info<< "/*----------------------------------------------------*/" << nl
+                    << "iCorr = " << iCorr << nl << nl << nl
+                    << "shear force at edges\n" << shearForceEdge << nl
+                    << "/*----------------------------------------------------*/" << nl
+                    << "theta at edges\n" << thetaEdge << nl
+                    << "/*----------------------------------------------------*/" << endl;
+                    // << "edgeBiNormal\n" << edgeBiNormal << endl;
             }
-            else
+
+            forAll(thetaX_.internalField(), cellI)
             {
-                /*---------------------------------------------------------------*/
-
-                // APPROACH 2 (LOOP OVER CELLS and for each cell LOOP over EDGES)
-                forAll(theta.internalField(), cellI)
+                // Info<< "cellI " << cellI << endl;
+                forAll(aMesh_.internalEdges(), edgeI)
                 {
-                    forAll(aMesh_.internalEdges(), edgeI)
+                    if (own[edgeI] == cellI)
                     {
-                        if (own[edgeI] == cellI)
-                        {
-                            thetaXEqn.source()[cellI] -=
-                                Gamma*leI[edgeI]
-                               *(
-                                    gradWEdge.internalField()[edgeI].component(vector::X)
-                                  - thetaEdge.internalField()[edgeI].component(vector::X)
-                                )
-                               *(
-                                    edgeCentres[edgeI].component(vector::X) 
-                                  - cellCentres[cellI].component(vector::X) 
-                                )*nx[edgeI];
+                        // Info<< "Adding own contribution of edgeI " << edgeI << " to source at cellI " << cellI << endl;
 
-                            thetaYEqn.source()[cellI] -=
-                                Gamma*leI[edgeI]
-                                *(
-                                    gradWEdge.internalField()[edgeI].component(vector::Y)
-                                  - thetaEdge.internalField()[edgeI].component(vector::Y)
-                                )
-                               *(
-                                    edgeCentres[edgeI].component(vector::Y) 
-                                  - cellCentres[cellI].component(vector::Y) 
-                                )*ny[edgeI];
-                        }
-                        else if (nei[edgeI] == cellI)
-                        {
-                            // Note: we use "+=" as nx and ny need to be flipped
-                            thetaXEqn.source()[cellI] +=
-                                Gamma*leI[edgeI]
-                               *(
-                                    gradWEdge.internalField()[edgeI].component(vector::X)
-                                  - thetaEdge.internalField()[edgeI].component(vector::X)
-                                )
-                               *(
-                                    edgeCentres[edgeI].component(vector::X) 
-                                  - cellCentres[cellI].component(vector::X) 
-                                )*nx[edgeI];
+                        thetaXEqn.source()[cellI] -=
+                            leI[edgeI]
+                           *(
+                                edgeCentres[edgeI].component(vector::X)
+                              - cellCentres[cellI].component(vector::X)
+                            )
+                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
 
-                            thetaYEqn.source()[cellI] +=
-                                Gamma*leI[edgeI]
-                               *(
-                                    gradWEdge.internalField()[edgeI].component(vector::Y)
-                                  - thetaEdge.internalField()[edgeI].component(vector::Y)
-                                )
-                               *(
-                                    edgeCentres[edgeI].component(vector::Y) 
-                                  - cellCentres[cellI].component(vector::Y) 
-                                )*ny[edgeI];
-                        }
+                        thetaYEqn.source()[cellI] -=
+                            leI[edgeI]
+                           *(
+                                edgeCentres[edgeI].component(vector::Y)
+                              - cellCentres[cellI].component(vector::Y)
+                            )
+                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
                     }
-                }
-
-                forAll(theta.boundaryField(), patchI)
-                {
-                    const faePatchVectorField pGradW(gradWEdge.boundaryField()[patchI]);
-                    const faePatchVectorField pThetaEdge(thetaEdge.boundaryField()[patchI]);
-                    const scalarField nxb
-                    (
-                        edgeBiNormal.boundaryField()[patchI].component(vector::X)
-                    );
-
-                    const scalarField nyb
-                    (
-                        edgeBiNormal.boundaryField()[patchI].component(vector::Y)
-                    );
-                    const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
-                    const vectorField pCellCentres(cellCentres.boundaryField()[patchI]);
-
-                    forAll(theta.boundaryField()[patchI], pEdge)
+                    else if (nei[edgeI] == cellI)
                     {
-                        // Boundary cell index
-                        const label bI = faBouMesh[patchI].edgeFaces()[pEdge];
-                        const scalar leB = le.boundaryField()[patchI][pEdge];
-
-                        thetaXEqn.source()[bI] -=
-                            Gamma*leB
-                            *(
-                                pGradW[pEdge].component(vector::X)
-                              - pThetaEdge[pEdge].component(vector::X)
-                            )
+                        // Note: we use "+=" as nx and ny need to be flipped
+                        thetaXEqn.source()[cellI] +=
+                            leI[edgeI]
                            *(
-                                pEdgeCentres[pEdge].component(vector::X) 
-                              - pCellCentres[bI].component(vector::X) 
-                            )*nxb[pEdge];
-
-                        thetaYEqn.source()[bI] -=
-                            Gamma*leB
-                            *(
-                                pGradW[pEdge].component(vector::Y)
-                              - pThetaEdge[pEdge].component(vector::Y)
+                                edgeCentres[edgeI].component(vector::X)
+                              - cellCentres[cellI].component(vector::X)
                             )
+                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+                        // Note: we use "+=" as nx and ny need to be flipped
+                        thetaYEqn.source()[cellI] +=
+                            leI[edgeI]
                            *(
-                                pEdgeCentres[pEdge].component(vector::Y) 
-                              - pCellCentres[bI].component(vector::Y) 
-                            )*nyb[pEdge];
+                                edgeCentres[edgeI].component(vector::Y)
+                              - cellCentres[cellI].component(vector::Y)
+                            )
+                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
                     }
                 }
             }
 
-            Info<< "grad w edge " << gradWEdge << endl;
-            Info<< "theta edge " << thetaEdge << endl;
+            if (printStatements)
+            {
+                Info<< "/*----------------------------------------------------*/" << nl
+                    << "thX source before adding shear force contrib. to BC\n" << thetaXEqn.source() << nl
+                    << "/*----------------------------------------------------*/" << nl
+                    << "thY source before adding shear force contrib. to BC\n" << thetaYEqn.source() << endl;
+            }
+
+
+            // Info<< "thX source before BC " << thetaXEqn.source() << endl;
+            // Info<< "thY source before BC " << thetaYEqn.source() << endl;
+
+            forAll(thetaX_.boundaryField(), patchI)
+            {
+                const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
+                // const vectorField pCellCentres(cellCentres.boundaryField()[patchI]);
+                const vectorField pShearForce(shearForceEdge.boundaryField()[patchI]);
+                const vectorField pEdgeBiNormal(edgeBiNormal.boundaryField()[patchI]);
+
+                forAll(thetaX_.boundaryField()[patchI], pEdge)
+                {
+                    // Boundary cell index
+                    const label bI(faBouMesh[patchI].edgeFaces()[pEdge]);
+                    const scalar leB(le.boundaryField()[patchI][pEdge]);
+
+                    if (printStatements)
+                    {
+                        Info<< "patchI " << patchI << " pEdge " << pEdge
+                            << " bI " << bI << nl <<endl;
+                    }
+
+                    // Note: We need to access cells that own the edge
+                    // cellCentres[bI] and not pCellCentres[bI] as it does not exist
+                    const scalar A = leB
+                       *(
+                            pEdgeCentres[pEdge].component(vector::X)
+                          - cellCentres[bI].component(vector::X)
+                        )
+                       *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+
+                    const scalar B = leB
+                       *(
+                            pEdgeCentres[pEdge].component(vector::Y)
+                          - cellCentres[bI].component(vector::Y)
+                        )
+                       *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+
+                    if (printStatements)
+                    {
+                        Info << "BC value to be added in theta X " << A << endl;
+                        Info << "BC value to be added in theta Y " << B << endl;
+                    }
+                    thetaXEqn.source()[bI] -= A;
+                    //     leB
+                    //    *(
+                    //         pEdgeCentres[pEdge].component(vector::X)
+                    //       - pCellCentres[pEdge].component(vector::X)
+                    //     )
+                    //    *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+
+                    thetaYEqn.source()[bI] -= B;
+                    //     leB
+                    //    *(
+                    //         pEdgeCentres[pEdge].component(vector::Y)
+                    //       - pCellCentres[pEdge].component(vector::Y)
+                    //     )
+                    //    *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+                }
+            }
+
+            // Info<< "grad w edge " << gradWEdge << endl;
+            // Info<< "theta edge " << thetaEdge << endl;
             // Info<< "le " << le << endl;
             // Info<< "invDelta " << invDeltaCoeffs << endl;
-            Info<< "thX source " << thetaXEqn.source() << endl;
-            Info<< "thY source " << thetaYEqn.source() << endl;
+            // Info<< "thX source " << thetaXEqn.source() << endl;
+            // Info<< "thY source " << thetaYEqn.source() << endl;
+            // Info<< "gradThetaX " << gradThetaX_ << endl;
+            // Info<< "gradThetaY " << gradThetaY_ << endl;
             /*---------------------------------------------------------------*/
 
+            if (printStatements)
+            {
+                Info<< "/*----------------------------------------------------*/" << nl
+                    << "thX source After adding shear force contrib. to BC\n" << thetaXEqn.source() << nl
+                    << "/*----------------------------------------------------*/" << nl
+                    << "thY source after adding shear force contrib. to BC\n" << thetaYEqn.source() << endl;
+            }
 
 
             /*---------------------------------------------------------------*/
@@ -1021,12 +962,15 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // GRADIENT THETA TERMS OF THE SOURCE
             // The first three terms of s_{\phi \l} term of thetaX and thetaY variables
             // in Demirdzic 1997 plate paper.
-            
+
+            const scalarField nx(edgeBiNormal.internalField().component(vector::X));
+            const scalarField ny(edgeBiNormal.internalField().component(vector::Y));
+
             // Interpolate grad(thetaX), grad(thetaY) to edges
             edgeVectorField gradthetaXEdge(fac::interpolate(gradThetaX_));
             edgeVectorField gradthetaYEdge(fac::interpolate(gradThetaY_));
 
-            // Info<< "gradthXE " << gradthetaXEdge << endl; 
+            // Info<< "gradthXE " << gradthetaXEdge << endl;
 
             // Avoid oscillations in gradient calculations
             if (compactEdgeNormalGrad)
@@ -1099,7 +1043,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // The terms when put in source (RHS) will change
             // signs. So the owner contributions are negative
             // and neighbour is positive. // CHECK WITH IVAN??
-            forAll(thetaXEqn.upper(), eI)
+            forAll(aMesh_.internalEdges(), eI)
             {
                 // thetaX part
                 thetaXEqn.source()[own[eI]] -=
@@ -1109,7 +1053,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                       + 0.5*(1 - nu)*gradThYX[eI]*ny[eI]
                       - 0.5*(1 + nu)*gradThXY[eI]*ny[eI]
                     );
-                
+
                 // thetaX part
                 thetaXEqn.source()[nei[eI]] +=
                     D*leI[eI]
@@ -1127,7 +1071,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                       + nu*gradThXX[eI]*ny[eI]
                       - 0.5*(1 + nu)*gradThYX[eI]*nx[eI]
                     );
-                
+
                 // thetaY part
                 thetaYEqn.source()[nei[eI]] +=
                     D*leI[eI]
@@ -1196,9 +1140,10 @@ bool mindlinDemirdzicPlateSolid::evolve()
                         );
                 }
             }
-            
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
+            thetaXEqn.relax();
+
             // Solve the linear system
             solverPerfThetaX = thetaXEqn.solve();
 
@@ -1211,6 +1156,8 @@ bool mindlinDemirdzicPlateSolid::evolve()
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
             // 3 - thetaY eqn
+            thetaYEqn.relax();
+
             // Solve the linear system
             solverPerfThetaY = thetaYEqn.solve();
 
