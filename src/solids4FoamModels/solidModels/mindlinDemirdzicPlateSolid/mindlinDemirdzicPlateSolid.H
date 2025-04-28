@@ -113,9 +113,7 @@ class mindlinDemirdzicPlateSolid
         const dimensionedScalar h_;
 
         //- Shear correction factor
-        // Removing shear correction factor as of now
-        // Demordzic version does not have it
-        // const scalar shearCorrectionFactor_;
+        const scalar shearCorrectionFactor_;
 
         //- Plate bending stiffness
         dimensionedScalar bendingStiffness_;

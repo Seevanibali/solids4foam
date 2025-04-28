@@ -506,7 +506,7 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
     E_("zero", dimPressure, 0.0),
     nu_("zero", dimless, 0.0),
     h_(solidModelDict().lookup("plateThickness")),
-    // shearCorrectionFactor_(solidModelDict().getOrDefault<scalar>("shearCorrectionFactor", 0.8333)),
+    shearCorrectionFactor_(solidModelDict().getOrDefault<scalar>("shearCorrectionFactor", 0.8333)),
     bendingStiffness_("zero", dimPressure*dimVolume, 0.0),
     // torsionalStiffness_("zero", dimPressure*dimVolume, 0.0),
     shearStrainStiffness_("zero",dimForce/dimLength, 0.0),
@@ -540,8 +540,8 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
     nu_ = mech.nu();
     bendingStiffness_ = E_*pow(h_, 3)/(12*(1 - pow(nu_, 2)));
     // torsionalStiffness_ = 0.5*(1 - nu_)*bendingStiffness_;
-    // shearStrainStiffness_ = shearCorrectionFactor_*0.5*E_*h_/(1 + nu_);
-    shearStrainStiffness_ = 0.5*E_*h_/(1 + nu_);
+    shearStrainStiffness_ = shearCorrectionFactor_*0.5*E_*h_/(1 + nu_);
+    // shearStrainStiffness_ = 0.5*E_*h_/(1 + nu_);
 
     Info<< "Plate mechanical properties\n"
         << "Poisson ratio \n" << nu_ << "\n"
