@@ -76,7 +76,7 @@ class mindlinPlateSolid
         volScalarField wVf_;
 
         //- Gradient of displacement field
-        // areaVectorField gradW_;
+        areaVectorField gradW_;
 
         //- Moment sum
         // areaScalarField M_;
@@ -89,7 +89,7 @@ class mindlinPlateSolid
 
         //- Net pressure field on the plate volume field
         volScalarField pVf_;
-        
+
         //- Angle of rotation thetaX (about y - axis)
         // areaScalarField thetaX_;
 

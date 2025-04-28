@@ -365,6 +365,19 @@ mindlinPlateSolid::mindlinPlateSolid
         mesh(),
         dimensionedScalar("zero", dimLength, 0.0)
     ),
+    gradW_
+    (
+        IOobject
+        (
+            "grad(" + w_.name() + ")",
+            runTime.timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
+        ),
+        aMesh_,
+        dimensionedVector("zero", dimless, vector::zero)
+    ),
     p_
     (
         IOobject
@@ -459,8 +472,8 @@ mindlinPlateSolid::mindlinPlateSolid
             "grad(" + theta_.name() + ")",
             runTime.timeName(),
             mesh(),
-            IOobject::NO_READ,   
-            IOobject::AUTO_WRITE 
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
         ),
         aMesh_,
         dimensionedTensor("zero", dimLength/dimArea, tensor::zero)
@@ -573,6 +586,12 @@ bool mindlinPlateSolid::evolve()
     // Create volume-to surface mapping object
     volSurfaceMapping vsm(aMesh_);
 
+// Lookup flag for using a compact stencil for the edge normal gradients
+    const Switch compactEdgeNormalGrad
+    (
+        solidModelDict().lookup("compactEdgeNormalGrad")
+    );
+
     // Mesh update loop
     do
     {
@@ -632,6 +651,24 @@ bool mindlinPlateSolid::evolve()
         const scalar alphaW(readScalar(solidModelDict().lookup("alphaW")));
         const scalar alphaTheta(readScalar(solidModelDict().lookup("alphaTheta")));
 
+        // Note: To get in-plane normal unit vectors to an edge, aMesh_.Le()
+        // can be used with unit norm
+        // Do not use aMesh.unitLe() member from faMesh, since the
+        // boundary values of aMesh.unitLe() are set to
+        // "calculated (0 0 0)" which is not correct!!
+        // Constructing the unit edgeBiNormal instead
+        // For 2-D meshes, aMesh_.edgeNormals() gives unit vector in z-direction
+        edgeVectorField edgeBiNormal("edgeBiNormal", aMesh_.Le()/aMesh_.magLe());
+
+
+        // Mesh information for explicit shear force calculation
+        const labelList& own(aMesh_.owner());
+        const labelList& nei(aMesh_.neighbour());
+        const edgeScalarField& le(aMesh_.magLe());
+        const faBoundaryMesh& faBouMesh(aMesh_.boundary());
+        const edgeVectorField& edgeCentres(aMesh_.edgeCentres());
+        const areaVectorField& cellCentres(aMesh_.areaCentres());
+
         do
         {
             // Store fields for under-relaxation and residual calculation
@@ -642,8 +679,8 @@ bool mindlinPlateSolid::evolve()
             faScalarMatrix wEqn
             (
                 fam::laplacian(shearStrainStiffness_, w_)
-              + fac::div(shearStrainStiffness_*theta_)
-              + p_
+              - fac::div(shearStrainStiffness_*theta_)
+              - p_
             );
 
             // Add stabilisation term
@@ -689,8 +726,7 @@ bool mindlinPlateSolid::evolve()
 
             // Info<< "w field\n" << w_ << endl;
             // Update the gradient of displacement
-            // gradW_ = fac::grad(w_);
-
+            gradW_ = fac::grad(w_);
 
             // Store fields for under-relaxation and residual calculation
             theta_.storePrevIter();
@@ -717,8 +753,12 @@ bool mindlinPlateSolid::evolve()
             //   + 0.5*bendingStiffness_*(1 + nu_)*fac::div(T(fac::grad(theta_)))
 
                 // Other terms
-              - shearStrainStiffness_*(fac::grad(w_))
+                // The theta dependent part of shear force is implicitly added
+                // and explictly removed to improve diagonalisation of matrix
+                // Shear force is explicitluy calculated and summed over edges
+            //   - shearStrainStiffness_*(fac::grad(w_))
               - fam::Sp(shearStrainStiffness_, theta_)
+              + shearStrainStiffness_*theta_
             );
 
             // Add stabilisation term
@@ -734,6 +774,87 @@ bool mindlinPlateSolid::evolve()
                     );
             }
 
+            /*---------------------------------------------------------------*/
+            /*---------------------------------------------------------------*/
+            // Explicit shear force calculation over edges
+            // (Like Demirdzic 1997 plate paper)
+
+            // Theta vector at edge centres
+            const edgeVectorField thetaEdge(fac::interpolate(theta_));
+
+            // Interpolation of gradients at edges
+            edgeVectorField gradWEdge(fac::interpolate(gradW_));
+
+            // Avoid oscillations in gradient calculations
+            if (compactEdgeNormalGrad)
+            {
+                const edgeScalarField lnGradWEdge(fac::lnGrad(w_));
+                gradWEdge +=
+                    lnGradWEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradWEdge);
+            }
+
+            const vectorField gradWEdgeI(gradWEdge.internalField());
+            const scalarField leI(le.internalField());
+
+            // Shear force at edges of the mesh
+            const edgeVectorField shearForceEdge
+            (
+                shearStrainStiffness_*(gradWEdge - thetaEdge)
+            );
+
+            const vectorField shearForceI(shearForceEdge.internalField());
+            const vectorField edgeBiNormalI(edgeBiNormal.internalField());
+
+            // Loop over internal edges
+            forAll(aMesh_.internalEdges(), edgeI)
+            {
+                thetaEqn.source()[own[edgeI]] -=
+                    leI[edgeI]
+                    *(
+                        edgeCentres[edgeI]
+                      - cellCentres[own[edgeI]]
+                    )
+                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+                // Note: we use "+=" as nx and ny need to be flipped
+                thetaEqn.source()[nei[edgeI]] +=
+                    leI[edgeI]
+                    *(
+                        edgeCentres[edgeI]
+                      - cellCentres[nei[edgeI]]
+                    )
+                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+            }
+
+            // Loop over boundary edges
+            forAll(theta_.boundaryField(), patchI)
+            {
+                const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
+                // const vectorField pCellCentres(cellCentres.boundaryField()[patchI]);
+                const vectorField pShearForce(shearForceEdge.boundaryField()[patchI]);
+                const vectorField pEdgeBiNormal(edgeBiNormal.boundaryField()[patchI]);
+
+                forAll(theta_.boundaryField()[patchI], pEdge)
+                {
+                    // Boundary cell index
+                    const label bI(faBouMesh[patchI].edgeFaces()[pEdge]);
+                    const scalar leB(le.boundaryField()[patchI][pEdge]);
+
+                    // Note: We need to access cells that own the edge
+                    // cellCentres[bI] and not pCellCentres[bI] as it does not exist
+                    thetaEqn.source()[bI] -=
+                        leB
+                       *(
+                            pEdgeCentres[pEdge]
+                          - cellCentres[bI]
+                        )
+                       *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+                }
+            }
+
+            /*---------------------------------------------------------------*/
+            /*---------------------------------------------------------------*/
+
             // d2dt2 can only take Euler as keyword, but if the user wants it to
             // be steadyState, it cannot happen. Hence check for ddtScheme
             // and add inertial terms for not steady state!!
@@ -741,6 +862,9 @@ bool mindlinPlateSolid::evolve()
             {
                 thetaEqn -= rho_*pow(h_,3)*(fac::d2dt2(theta_))/12;
             }
+
+            // Relax the thetaqn
+            thetaEqn.relax();
 
             // Solve the linear system
             solverPerfTheta = thetaEqn.solve();
