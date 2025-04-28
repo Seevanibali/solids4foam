@@ -699,12 +699,16 @@ bool mindlinDemirdzicPlateSolid::evolve()
             faScalarMatrix thetaXEqn
             (
                 fam::laplacian(bendingStiffness_, thetaX_)
+               - fam::Sp(shearStrainStiffness_, thetaX_)
+               + shearStrainStiffness_*thetaX_
             );
 
             // Initialise thetaY equation with implicit laplacian terms
             faScalarMatrix thetaYEqn
             (
                 fam::laplacian(bendingStiffness_, thetaY_)
+              - fam::Sp(shearStrainStiffness_, thetaY_)
+              + shearStrainStiffness_*thetaY_
             );
 
             if (alphaTheta > 0.0)
@@ -799,8 +803,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
             // // Shear strain constant after removing dimension (Gamma = G*h)
             // const scalar Gamma(shearStrainStiffness_.value());
 
-            // APPROACH 2 (LOOP OVER CELLS and for each cell LOOP over EDGES)
-
             const edgeVectorField shearForceEdge
             (
                 shearStrainStiffness_*(gradWEdge - thetaEdge)
@@ -820,52 +822,92 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     // << "edgeBiNormal\n" << edgeBiNormal << endl;
             }
 
-            forAll(thetaX_.internalField(), cellI)
+            // APPROACH 2 (Loop over cells and for each cell Loop over edges)
+            // forAll(thetaX_.internalField(), cellI)
+            // {
+            //     // Info<< "cellI " << cellI << endl;
+            //     forAll(aMesh_.internalEdges(), edgeI)
+            //     {
+            //         if (own[edgeI] == cellI)
+            //         {
+            //             // Info<< "Adding own contribution of edgeI " << edgeI << " to source at cellI " << cellI << endl;
+
+            //             thetaXEqn.source()[cellI] -=
+            //                 leI[edgeI]
+            //                *(
+            //                     edgeCentres[edgeI].component(vector::X)
+            //                   - cellCentres[cellI].component(vector::X)
+            //                 )
+            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+            //             thetaYEqn.source()[cellI] -=
+            //                 leI[edgeI]
+            //                *(
+            //                     edgeCentres[edgeI].component(vector::Y)
+            //                   - cellCentres[cellI].component(vector::Y)
+            //                 )
+            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+            //         }
+            //         else if (nei[edgeI] == cellI)
+            //         {
+            //             // Note: we use "+=" as nx and ny need to be flipped
+            //             thetaXEqn.source()[cellI] +=
+            //                 leI[edgeI]
+            //                *(
+            //                     edgeCentres[edgeI].component(vector::X)
+            //                   - cellCentres[cellI].component(vector::X)
+            //                 )
+            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+            //             // Note: we use "+=" as nx and ny need to be flipped
+            //             thetaYEqn.source()[cellI] +=
+            //                 leI[edgeI]
+            //                *(
+            //                     edgeCentres[edgeI].component(vector::Y)
+            //                   - cellCentres[cellI].component(vector::Y)
+            //                 )
+            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+            //         }
+            //     }
+            // }
+
+            // APPROACH 1 - Loop over edges directly!!
+            // Loop over internal edges
+            forAll(aMesh_.internalEdges(), edgeI)
             {
-                // Info<< "cellI " << cellI << endl;
-                forAll(aMesh_.internalEdges(), edgeI)
-                {
-                    if (own[edgeI] == cellI)
-                    {
-                        // Info<< "Adding own contribution of edgeI " << edgeI << " to source at cellI " << cellI << endl;
+                thetaXEqn.source()[own[edgeI]] -=
+                    leI[edgeI]
+                    *(
+                        edgeCentres[edgeI].component(vector::X)
+                      - cellCentres[own[edgeI]].component(vector::X)
+                    )
+                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
 
-                        thetaXEqn.source()[cellI] -=
-                            leI[edgeI]
-                           *(
-                                edgeCentres[edgeI].component(vector::X)
-                              - cellCentres[cellI].component(vector::X)
-                            )
-                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+                thetaYEqn.source()[own[edgeI]] -=
+                    leI[edgeI]
+                    *(
+                        edgeCentres[edgeI].component(vector::Y)
+                      - cellCentres[own[edgeI]].component(vector::Y)
+                    )
+                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
 
-                        thetaYEqn.source()[cellI] -=
-                            leI[edgeI]
-                           *(
-                                edgeCentres[edgeI].component(vector::Y)
-                              - cellCentres[cellI].component(vector::Y)
-                            )
-                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-                    }
-                    else if (nei[edgeI] == cellI)
-                    {
-                        // Note: we use "+=" as nx and ny need to be flipped
-                        thetaXEqn.source()[cellI] +=
-                            leI[edgeI]
-                           *(
-                                edgeCentres[edgeI].component(vector::X)
-                              - cellCentres[cellI].component(vector::X)
-                            )
-                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+                // Note: we use "+=" as nx and ny need to be flipped
+                thetaXEqn.source()[nei[edgeI]] +=
+                    leI[edgeI]
+                    *(
+                        edgeCentres[edgeI].component(vector::X)
+                      - cellCentres[nei[edgeI]].component(vector::X)
+                    )
+                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
 
-                        // Note: we use "+=" as nx and ny need to be flipped
-                        thetaYEqn.source()[cellI] +=
-                            leI[edgeI]
-                           *(
-                                edgeCentres[edgeI].component(vector::Y)
-                              - cellCentres[cellI].component(vector::Y)
-                            )
-                           *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-                    }
-                }
+                // Note: we use "+=" as nx and ny need to be flipped
+                thetaYEqn.source()[nei[edgeI]] +=
+                    leI[edgeI]
+                    *(
+                        edgeCentres[edgeI].component(vector::Y)
+                      - cellCentres[nei[edgeI]].component(vector::Y)
+                    )
+                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
             }
 
             if (printStatements)
@@ -876,10 +918,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     << "thY source before adding shear force contrib. to BC\n" << thetaYEqn.source() << endl;
             }
 
-
-            // Info<< "thX source before BC " << thetaXEqn.source() << endl;
-            // Info<< "thY source before BC " << thetaYEqn.source() << endl;
-
+            // Loop over all boundary edges
             forAll(thetaX_.boundaryField(), patchI)
             {
                 const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
@@ -901,52 +940,23 @@ bool mindlinDemirdzicPlateSolid::evolve()
 
                     // Note: We need to access cells that own the edge
                     // cellCentres[bI] and not pCellCentres[bI] as it does not exist
-                    const scalar A = leB
+                    thetaXEqn.source()[bI] -=
+                        leB
                        *(
                             pEdgeCentres[pEdge].component(vector::X)
                           - cellCentres[bI].component(vector::X)
                         )
                        *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
 
-                    const scalar B = leB
+                    thetaYEqn.source()[bI] -=
+                        leB
                        *(
                             pEdgeCentres[pEdge].component(vector::Y)
                           - cellCentres[bI].component(vector::Y)
                         )
                        *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
-
-                    if (printStatements)
-                    {
-                        Info << "BC value to be added in theta X " << A << endl;
-                        Info << "BC value to be added in theta Y " << B << endl;
-                    }
-                    thetaXEqn.source()[bI] -= A;
-                    //     leB
-                    //    *(
-                    //         pEdgeCentres[pEdge].component(vector::X)
-                    //       - pCellCentres[pEdge].component(vector::X)
-                    //     )
-                    //    *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
-
-                    thetaYEqn.source()[bI] -= B;
-                    //     leB
-                    //    *(
-                    //         pEdgeCentres[pEdge].component(vector::Y)
-                    //       - pCellCentres[pEdge].component(vector::Y)
-                    //     )
-                    //    *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
                 }
             }
-
-            // Info<< "grad w edge " << gradWEdge << endl;
-            // Info<< "theta edge " << thetaEdge << endl;
-            // Info<< "le " << le << endl;
-            // Info<< "invDelta " << invDeltaCoeffs << endl;
-            // Info<< "thX source " << thetaXEqn.source() << endl;
-            // Info<< "thY source " << thetaYEqn.source() << endl;
-            // Info<< "gradThetaX " << gradThetaX_ << endl;
-            // Info<< "gradThetaY " << gradThetaY_ << endl;
-            /*---------------------------------------------------------------*/
 
             if (printStatements)
             {
