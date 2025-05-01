@@ -56,15 +56,15 @@ bool mindlinDemirdzicPlateSolid::converged
 #ifdef OPENFOAM_NOT_EXTEND
     const SolverPerformance<scalar>& solverPerfw,
     const SolverPerformance<scalar>& solverPerfThetaX,
-    const SolverPerformance<scalar>& solverPerfThetaY,
+    // const SolverPerformance<scalar>& solverPerfThetaY,
 #else
     const lduSolverPerformance& solverPerfw,
     const lduSolverPerformance& solverPerfThetaX,
-    const lduSolverPerformance& solverPerfThetaY,
+    // const lduSolverPerformance& solverPerfThetaY,
 #endif
     const areaScalarField& w,
-    const areaScalarField& thetaX,
-    const areaScalarField& thetaY
+    const areaScalarField& thetaX
+    // const areaScalarField& thetaY
 )
 {
     // We will check a number of different residuals for convergence
@@ -81,7 +81,7 @@ bool mindlinDemirdzicPlateSolid::converged
                 )
             )()
         );
-
+/* 
     const scalar resThetaY =
     gMax
     (
@@ -93,7 +93,7 @@ bool mindlinDemirdzicPlateSolid::converged
             )
         )()
     );
-
+ */
     const scalar residualw =
         gMax
         (
@@ -117,7 +117,7 @@ bool mindlinDemirdzicPlateSolid::converged
 
         bool convergedw = false;
         bool convergedThetaX = false;
-        bool convergedThetaY = false;
+        // bool convergedThetaY = false;
 
         if
         (
@@ -146,7 +146,7 @@ bool mindlinDemirdzicPlateSolid::converged
         {
             convergedThetaX = true;
         }
-
+/* 
         if
         (
             (
@@ -160,14 +160,14 @@ bool mindlinDemirdzicPlateSolid::converged
         {
             convergedThetaY = true;
         }
-
-        if (convergedw)
+ */
+        if (convergedw && convergedThetaX)
         {
-            if (convergedThetaX && convergedThetaY)
-            {
+            // if (convergedThetaX && convergedThetaY)
+            // {
                 Info<< "    The residuals have converged" << endl;
                 converged = true;
-            }
+            // }
         }
     }
 
@@ -183,13 +183,13 @@ bool mindlinDemirdzicPlateSolid::converged
         Info<< "    " << iCorr
             << ", " << solverPerfw.initialResidual()
             << ", " << solverPerfThetaX.initialResidual()
-            << ", " << solverPerfThetaY.initialResidual()
+            // << ", " << solverPerfThetaY.initialResidual()
             << ", " << tab << residualw
             << ", " << resThetaX
-            << ", " << resThetaY
+            // << ", " << resThetaY
             << ", " << tab << solverPerfw.nIterations()
             << ", " << solverPerfThetaX.nIterations()
-            << ", " << solverPerfThetaY.nIterations()
+            // << ", " << solverPerfThetaY.nIterations()
             << endl;
 
         if (converged)
@@ -568,11 +568,11 @@ bool mindlinDemirdzicPlateSolid::evolve()
         solidModelDict().lookup("compactEdgeNormalGrad")
     );
 
-    // Flag for printing statements
-    const Switch printStatements
-    (
-        solidModelDict().lookup("printStatements")
-    );
+    // // Flag for printing statements
+    // const Switch printStatements
+    // (
+    //     solidModelDict().lookup("printStatements")
+    // );
     // Mesh update loop
     do
     {
@@ -652,7 +652,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
             thetaY_.storePrevIter();
             gradW_.storePrevIter();
             gradThetaX_.storePrevIter();
-            gradThetaY_.storePrevIter();
+            // gradThetaY_.storePrevIter();
 
             // Info<< "thetaEdge " << thetaEdge << endl;
 
@@ -703,14 +703,14 @@ bool mindlinDemirdzicPlateSolid::evolve()
                + shearStrainStiffness_*thetaX_
             );
 
-            // Initialise thetaY equation with implicit laplacian terms
+/*             // Initialise thetaY equation with implicit laplacian terms
             faScalarMatrix thetaYEqn
             (
                 fam::laplacian(bendingStiffness_, thetaY_)
               - fam::Sp(shearStrainStiffness_, thetaY_)
               + shearStrainStiffness_*thetaY_
             );
-
+ */
             if (alphaTheta > 0.0)
             {
                 thetaXEqn +=
@@ -720,12 +720,12 @@ bool mindlinDemirdzicPlateSolid::evolve()
                       - fac::laplacian(bendingStiffness_, thetaX_)
                     );
 
-                thetaYEqn +=
+/*                 thetaYEqn +=
                     alphaTheta
                    *(
                         fac::div(bendingStiffness_*gradThetaY_)
                       - fac::laplacian(bendingStiffness_, thetaY_)
-                    );
+                    ); */
             }
 
             // NOTE!! - How to get the moment arm (x - x_P) and (y - y_P)?
@@ -811,17 +811,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
             const vectorField shearForceI(shearForceEdge.internalField());
             const vectorField edgeBiNormalI(edgeBiNormal.internalField());
 
-            if (printStatements)
-            {
-                Info<< "/*----------------------------------------------------*/" << nl
-                    << "iCorr = " << iCorr << nl << nl << nl
-                    << "shear force at edges\n" << shearForceEdge << nl
-                    << "/*----------------------------------------------------*/" << nl
-                    << "theta at edges\n" << thetaEdge << nl
-                    << "/*----------------------------------------------------*/" << endl;
-                    // << "edgeBiNormal\n" << edgeBiNormal << endl;
-            }
-
             // APPROACH 2 (Loop over cells and for each cell Loop over edges)
             // forAll(thetaX_.internalField(), cellI)
             // {
@@ -883,14 +872,14 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     )
                     *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
 
-                thetaYEqn.source()[own[edgeI]] -=
+/*                 thetaYEqn.source()[own[edgeI]] -=
                     leI[edgeI]
                     *(
                         edgeCentres[edgeI].component(vector::Y)
                       - cellCentres[own[edgeI]].component(vector::Y)
                     )
                     *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-
+ */
                 // Note: we use "+=" as nx and ny need to be flipped
                 thetaXEqn.source()[nei[edgeI]] +=
                     leI[edgeI]
@@ -900,7 +889,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     )
                     *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
 
-                // Note: we use "+=" as nx and ny need to be flipped
+/*                 // Note: we use "+=" as nx and ny need to be flipped
                 thetaYEqn.source()[nei[edgeI]] +=
                     leI[edgeI]
                     *(
@@ -908,14 +897,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                       - cellCentres[nei[edgeI]].component(vector::Y)
                     )
                     *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-            }
-
-            if (printStatements)
-            {
-                Info<< "/*----------------------------------------------------*/" << nl
-                    << "thX source before adding shear force contrib. to BC\n" << thetaXEqn.source() << nl
-                    << "/*----------------------------------------------------*/" << nl
-                    << "thY source before adding shear force contrib. to BC\n" << thetaYEqn.source() << endl;
+ */
             }
 
             // Loop over all boundary edges
@@ -932,12 +914,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     const label bI(faBouMesh[patchI].edgeFaces()[pEdge]);
                     const scalar leB(le.boundaryField()[patchI][pEdge]);
 
-                    if (printStatements)
-                    {
-                        Info<< "patchI " << patchI << " pEdge " << pEdge
-                            << " bI " << bI << nl <<endl;
-                    }
-
                     // Note: We need to access cells that own the edge
                     // cellCentres[bI] and not pCellCentres[bI] as it does not exist
                     thetaXEqn.source()[bI] -=
@@ -948,24 +924,16 @@ bool mindlinDemirdzicPlateSolid::evolve()
                         )
                        *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
 
-                    thetaYEqn.source()[bI] -=
+/*                     thetaYEqn.source()[bI] -=
                         leB
                        *(
                             pEdgeCentres[pEdge].component(vector::Y)
                           - cellCentres[bI].component(vector::Y)
                         )
                        *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+ */
                 }
             }
-
-            if (printStatements)
-            {
-                Info<< "/*----------------------------------------------------*/" << nl
-                    << "thX source After adding shear force contrib. to BC\n" << thetaXEqn.source() << nl
-                    << "/*----------------------------------------------------*/" << nl
-                    << "thY source after adding shear force contrib. to BC\n" << thetaYEqn.source() << endl;
-            }
-
 
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
@@ -1073,7 +1041,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                       - 0.5*(1 + nu)*gradThXY[eI]*ny[eI]
                     );
 
-                // thetaY part
+/*                 // thetaY part
                 thetaYEqn.source()[own[eI]] -=
                     D*leI[eI]
                    *(
@@ -1090,6 +1058,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                       + nu*gradThXX[eI]*ny[eI]
                       - 0.5*(1 + nu)*gradThYX[eI]*nx[eI]
                     );
+ */
             }
 
             // Boundary edges
@@ -1139,7 +1108,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                           + 0.5*(1 - nu)*pGradThYX[pEdge]*nyb[pEdge]
                           - 0.5*(1 + nu)*pGradThXY[pEdge]*nyb[pEdge]
                         );
-
+/*
                     // thetaY part
                     thetaYEqn.source()[bI] -=
                         D*leB
@@ -1148,6 +1117,7 @@ bool mindlinDemirdzicPlateSolid::evolve()
                           + nu*pGradThXX[pEdge]*nyb[pEdge]
                           - 0.5*(1 + nu)*pGradThYX[pEdge]*nxb[pEdge]
                         );
+ */
                 }
             }
             /*---------------------------------------------------------------*/
@@ -1166,15 +1136,15 @@ bool mindlinDemirdzicPlateSolid::evolve()
             /*---------------------------------------------------------------*/
             /*---------------------------------------------------------------*/
             // 3 - thetaY eqn
-            thetaYEqn.relax();
+            // thetaYEqn.relax();
 
-            // Solve the linear system
-            solverPerfThetaY = thetaYEqn.solve();
+            // // Solve the linear system
+            // solverPerfThetaY = thetaYEqn.solve();
 
-            thetaY_.relax();
+            // thetaY_.relax();
 
-            // Gradient of thetaY (TO BE CHANGED)
-            gradThetaY_ = fac::grad(thetaY_);
+            // // Gradient of thetaY (TO BE CHANGED)
+            // gradThetaY_ = fac::grad(thetaY_);
         }
         while
         (
@@ -1183,10 +1153,10 @@ bool mindlinDemirdzicPlateSolid::evolve()
                 iCorr,
                 solverPerfw,
                 solverPerfThetaX,
-                solverPerfThetaY,
+                // solverPerfThetaY,
                 w_,
-                thetaX_,
-                thetaY_
+                thetaX_
+                // thetaY_
             )
             &&
             ++iCorr < nCorr()

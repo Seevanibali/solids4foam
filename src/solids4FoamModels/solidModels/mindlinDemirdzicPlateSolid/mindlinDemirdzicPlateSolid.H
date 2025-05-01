@@ -149,15 +149,15 @@ class mindlinDemirdzicPlateSolid
     #ifdef OPENFOAM_NOT_EXTEND
         const SolverPerformance<scalar>& solverPerfw,
         const SolverPerformance<scalar>& solverPerfThetaX,
-        const SolverPerformance<scalar>& solverPerfThetaY,
+        // const SolverPerformance<scalar>& solverPerfThetaY,
     #else
         const lduSolverPerformance& solverPerfw,
         const lduSolverPerformance& solverPerfThetaX,
-        const lduSolverPerformance& solverPerfThetaY,
+        // const lduSolverPerformance& solverPerfThetaY,
     #endif
         const areaScalarField& w,
-        const areaScalarField& thetaX,
-        const areaScalarField& thetaY
+        const areaScalarField& thetaX
+        // const areaScalarField& thetaY
         );
 
         //- Return a reference to the areaPatch
