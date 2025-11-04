@@ -796,7 +796,7 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
             "w.analytical",
             runTime.timeName(),
             mesh(),
-            IOobject::READ_IF_PRESENT,
+            IOobject::NO_READ,
             IOobject::AUTO_WRITE
         ),
         aMesh_
