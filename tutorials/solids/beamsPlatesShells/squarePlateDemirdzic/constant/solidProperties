@@ -1,0 +1,66 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| solids4foam: solid mechanics and fluid-solid interaction simulations        |
+| Version:     v2.0                                                           |
+| Web:         https://solids4foam.github.io                                  |
+| Disclaimer:  This offering is not approved or endorsed by OpenCFD Limited,  |
+|              producer and distributor of the OpenFOAM software via          |
+|              www.openfoam.com, and owner of the OPENFOAM® and OpenCFD®      |
+|              trade marks.                                                   |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      solidProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// solidModel     mindlinPlate;
+solidModel     mindlinDemirdzicPlate;
+	
+// mindlinPlateCoeffs
+mindlinDemirdzicPlateCoeffs
+{					
+    // Plate thickness
+    plateThickness    plateThickness [ 0 1 0 0 0 0 0 ] 0.1;
+
+    // Maximum number of momentum correctors
+    nCorrectors     25000;
+
+    // Solution tolerance for displacement
+    solutionTolerance 1e-8;
+
+    // Alternative solution tolerance for displacement
+    alternativeTolerance 1e-8;
+
+    // Material law solution tolerance
+    //materialTolerance 1e-05;
+
+    //    shearCorrectionFactor 1;
+    
+    // Write frequency for the residuals
+    infoFrequency   1;
+
+    // W equation stabilisation term                                                                                                                            
+    // 0 : no additional stabilisation                                                                                                                          
+    // 1 : full stabilisation                                                                                                                                   
+    // Strong effect: closer to 1 is less stiff for a given mesh, but                                                                                           
+    // convergence may get worse                                                                                                                                
+    alphaW    0.0;
+
+    // Theta equation stabilisation term                                                                                                                        
+    // 0 : no additional stabilisation                                                                                                                          
+    // 1 : full stabilisation                                                                                                                                   
+    // Does not seem to have much effect                                                                                                                        
+    alphaTheta    0;
+
+    compactEdgeNormalGrad true;
+
+    coupled  false;
+
+    // scaleW    1;
+}
+
+// ************************************************************************* //
