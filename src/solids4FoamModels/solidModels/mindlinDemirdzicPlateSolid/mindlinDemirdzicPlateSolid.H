@@ -74,7 +74,7 @@ class mindlinDemirdzicPlateSolid
         volScalarField wVf_;
 
         //- Analytical solution of w (used for debugging)
-        areaScalarField wAnalytical_;
+        // areaScalarField wAnalytical_;
 
         //- Gradient of displacement field
         areaVectorField gradW_;

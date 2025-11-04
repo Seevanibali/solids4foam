@@ -789,18 +789,18 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
         mesh(),
         dimensionedScalar("zero", dimLength, 0.0)
     ),
-    wAnalytical_
-    (
-        IOobject
-        (
-            "w.analytical",
-            runTime.timeName(),
-            mesh(),
-            IOobject::NO_READ,
-            IOobject::AUTO_WRITE
-        ),
-        aMesh_
-    ),
+    // wAnalytical_
+    // (
+    //     IOobject
+    //     (
+    //         "w.analytical",
+    //         runTime.timeName(),
+    //         mesh(),
+    //         IOobject::NO_READ,
+    //         IOobject::AUTO_WRITE
+    //     ),
+    //     aMesh_
+    // ),
     gradW_
     (
         IOobject
