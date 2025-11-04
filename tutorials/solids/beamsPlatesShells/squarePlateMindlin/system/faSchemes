@@ -46,6 +46,7 @@ gradSchemes
 
 lnGradSchemes
 {
+    default corrected;
 }
 
 laplacianSchemes

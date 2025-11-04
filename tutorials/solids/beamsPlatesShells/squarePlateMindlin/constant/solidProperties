@@ -22,22 +22,37 @@ solidModel     mindlinPlate;
 mindlinPlateCoeffs
 {					
     // Plate thickness
-    plateThickness    plateThickness [ 0 1 0 0 0 0 0 ] 1;
+    plateThickness    plateThickness [ 0 1 0 0 0 0 0 ] 0.1; //1
 
     // Maximum number of momentum correctors
-    nCorrectors     50000;
+    nCorrectors     25000;
 
     // Solution tolerance for displacement
-    solutionTolerance 1e-13;
+    solutionTolerance 1e-8;
 
     // Alternative solution tolerance for displacement
-    alternativeTolerance 1e-13;
+    alternativeTolerance 1e-8;
 
     // Material law solution tolerance
     //materialTolerance 1e-05;
 
     // Write frequency for the residuals
     infoFrequency   1;
+
+    // W equation stabilisation term                                                                                                                            
+    // 0 : no additional stabilisation                                                                                                                          
+    // 1 : full stabilisation                                                                                                                                   
+    // Strong effect: closer to 1 is less stiff for a given mesh, but                                                                                           
+    // convergence may get worse                                                                                                                                
+    alphaW    0.0;
+
+    // Theta equation stabilisation term                                                                                                                        
+    // 0 : no additional stabilisation                                                                                                                          
+    // 1 : full stabilisation                                                                                                                                   
+    // Does not seem to have much effect                                                                                                                        
+    alphaTheta    0.0;
+
+    compactEdgeNormalGrad true;
 }
 
 // ************************************************************************* //

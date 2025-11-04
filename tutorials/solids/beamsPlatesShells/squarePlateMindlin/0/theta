@@ -30,6 +30,12 @@ boundaryField
         value           uniform (0 0 0);
     }
 
+    // "right|left|top|bottom"
+    // {
+    //     // Simply Supported Edge
+    //     type            zeroGradient;
+    // }
+
     back
     {
          type            empty;

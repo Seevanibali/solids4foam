@@ -12,36 +12,69 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    location    "system";
-    object      fvSolution;
+    location    "constant/polyMesh";
+    object      blockMeshDict;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-solvers
-{
-    // Coupled solver
-    "w|theta"
-    {
-        tolerance       1e-8;
-        relTol          1e-8; //0.1;
-        maxIter         1000;
+scale 1;
 
-        solver          PCG;
-        preconditioner  DIC;
-    }
-}
+vertices
+(
+    (0 0 0)
+    (10 0 0)
+    (10 10 0)
+    (0 10 0)
+    (0 0 0.1)
+    (10 0 0.1)
+    (10 10 0.1)
+    (0 10 0.1)
+);
 
-relaxationFactors
-{
-    equations
-    {
-    }
+blocks
+(
+    hex (0 1 2 3 4 5 6 7)(20 20 1) simpleGrading (1 1 1)
+);
 
-    fields
-    {
-       //  w        0.5;
-       // theta        0.7;
-    }
-}
+edges
+(
+);
+
+patches
+(
+    patch top
+ (
+     (2 3 7 6)
+ )
+
+    patch left
+    (
+        (3 0 4 7)
+    )
+
+    patch right
+    (
+        (1 2 6 5)
+    )
+
+    patch bottom
+    (
+        (0 1 5 4)
+    )
+
+    patch front
+    (
+        (7 6 5 4)
+    )
+
+    patch back
+    (
+        (0 1 2 3)
+    )
+);
+
+mergePatchPairs
+(
+);
 
 // ************************************************************************* //
