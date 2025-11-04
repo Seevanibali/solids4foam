@@ -515,7 +515,7 @@ bool kirchhoffPlateSolid::evolve()
             (aMesh_.d2dt2Schemes().lookup("default"))
         );
 
-        WarningIn("evolve() function in kirchhoff plate rotation-free solid")<< nl 
+        WarningIn("evolve() function in kirchhoff plate rotation-free solid")<< nl
             << "d2dt2Scheme in system/faSchemes cannot take steadyState as a valid keyword!" << nl 
             << "If you want plate-case to be solved for steady state condition, "
             << "set ddtScheme to be steadyState instead!! " << endl;
@@ -533,11 +533,11 @@ bool kirchhoffPlateSolid::evolve()
         // p is the net transverse pressure
         // D is the bending stiffness
         // Two approaches for solving the equations implemented here
-        
+
         theta_.storePrevIter();
 
         // Approach 1: Block - coupled formulation, Solve M and w equations simulataneously
-        // The equations are linear, so no Newton loop is required, solution 
+        // The equations are linear, so no Newton loop is required, solution
         // directly obtained from AX = B
         if (coupled_)
         {
@@ -557,12 +557,12 @@ bool kirchhoffPlateSolid::evolve()
 
             // Initialise block matrix (2 scalar equations of w and M per cell)
             SparseMatrixTemplate<scalar> matrix(2*nCells);
-            
+
             matrix.clear();
 
             // Initialise source vector
             scalarField source(2*nCells, 0.0);
-            
+
             // Initialise solution field
             scalarField solveMw(2*nCells, 0.0);
 
@@ -573,7 +573,7 @@ bool kirchhoffPlateSolid::evolve()
             const faScalarMatrix d2dt2W(rho_*h_*fam::d2dt2(w_));
             const scalarField& d2dt2WDiag = d2dt2W.diag();
             const scalarField& d2dt2WSource = d2dt2W.source();
-            
+
             // Calculate Laplacian discretisation of M (moment sum)
             const faScalarMatrix laplacianM(-fam::laplacian(M_));
             const scalarField& lapMDiag = laplacianM.diag();
@@ -581,7 +581,7 @@ bool kirchhoffPlateSolid::evolve()
             const FieldField<Field, scalar>& lapMIntCoeffs = laplacianM.internalCoeffs();
             const FieldField<Field, scalar>& lapMBouCoeffs = laplacianM.boundaryCoeffs();
 
-            // Calculate Laplacian discretisation of w 
+            // Calculate Laplacian discretisation of w
             const faScalarMatrix laplacianW(fam::laplacian(bendingStiffness_, w_));
             const scalarField& lapWDiag = laplacianW.diag();
             const scalarField& lapWUpper = laplacianW.upper();
@@ -591,8 +591,8 @@ bool kirchhoffPlateSolid::evolve()
             // Assembling the diagonal coeffs of MEqn and wEqn into a block matrix
             forAll(lapMDiag, i)
             {
-                // Diagonals of the block matrix diagonal 
-                // Coefficient of M in MEqn   
+                // Diagonals of the block matrix diagonal
+                // Coefficient of M in MEqn
                 matrix(2*i, 2*i) = lapMDiag[i];
 
                 // Coefficient of w in wEqn
@@ -630,7 +630,7 @@ bool kirchhoffPlateSolid::evolve()
                 else
                 {
                     FatalError("evolve() function in kirchhoff plate rotattion-free solid") << nl
-                        << "Incompatible (or not defined) d2dt2Scheme " 
+                        << "Incompatible (or not defined) d2dt2Scheme "
                         << d2dt2SchemeName << " is specified! "
                         << abort(FatalError);
                 }
@@ -642,9 +642,9 @@ bool kirchhoffPlateSolid::evolve()
             {
                 label i = own[faceI];
                 label j = nei[faceI];
-                
+
                 // Coefficients of the upper part of the block matrix
-                // Note: There is no neighbour contribution of w in MEqn and M in wEqn 
+                // Note: There is no neighbour contribution of w in MEqn and M in wEqn
                 // for rotation-free Kirchhoff plate equations
                 // Neighbour contribution of M in MEqn
                 matrix(2*i, 2*j) = lapMUpper[i];
@@ -679,7 +679,7 @@ bool kirchhoffPlateSolid::evolve()
                         // So an iterative loop is needed.
                         const scalar coeffBouW(-2*leB*bendingStiffness_.value()*pow(delB,3));
                         const scalar explicitW(w_.boundaryField()[patchI][faceI]);
-                        
+
                         // Diagonal contribution for BC to M_ of the matrix in MEqn
                         matrix(2*bI, 2*bI) += lapMIntCoeffs[patchI][faceI];
 
@@ -687,7 +687,7 @@ bool kirchhoffPlateSolid::evolve()
                         matrix(2*bI, 2*bI + 1) += coeffBouW;
 
                         // Explicit contribution of boundary edges to the source (MEqn)
-                        source[2*bI] -= coeffBouW*explicitW;                 
+                        source[2*bI] -= coeffBouW*explicitW;
                     }
                     else
                     {
@@ -702,7 +702,7 @@ bool kirchhoffPlateSolid::evolve()
 
                         // Explicit contribution of boundary edges to the source (wEqn)
                         source[2*bI + 1] += lapWBouCoeffs[patchI][faceI];
-                    }   
+                    }
                 }
             }
 
@@ -739,14 +739,14 @@ bool kirchhoffPlateSolid::evolve()
         }
         else
         {
-            // Approach 2: Using segregated method of solving M and w equations separately 
+            // Approach 2: Using segregated method of solving M and w equations separately
             // and then iteratively update them until the values fall below a solution tolerance
 
-            Info<< "\nUsing segregated approach to solve for w & M eqns " 
+            Info<< "\nUsing segregated approach to solve for w & M eqns "
                 << "separately and iteratively update them!" << endl;
 
             do
-            { 
+            {
                 // Store fields for under-relaxation and residual calculation
                 M_.storePrevIter();
 
@@ -769,7 +769,7 @@ bool kirchhoffPlateSolid::evolve()
                 );
 
                 // d2dt2 can only take Euler as keyword, but if the user wants it to
-                // be steadyState, it cannot happen. Hence check for ddtScheme 
+                // be steadyState, it cannot happen. Hence check for ddtScheme
                 // and remove inertial terms for steady state!!
                 if(ddtSchemeName != "steadyState")
                 {
@@ -787,7 +787,7 @@ bool kirchhoffPlateSolid::evolve()
 
                 // Store fields for under-relaxation and residual calculation
                 w_.storePrevIter();
-                
+
                 // Solve w equation
                 faScalarMatrix wEqn
                 (
@@ -811,7 +811,7 @@ bool kirchhoffPlateSolid::evolve()
                 gradTheta_ = fac::grad(theta_);
 
                 // Info<< "theta " << theta_ << nl << endl;
-                // << "gradTheta " << gradTheta_ << endl;         
+                // << "gradTheta " << gradTheta_ << endl;
             }
             while
             (
@@ -820,7 +820,7 @@ bool kirchhoffPlateSolid::evolve()
             );
 
         }
-        
+
         // Map area fields to vol fields
         mapAreaFieldToSingleLayerVolumeField(M_, MVf_);
         mapAreaFieldToSingleLayerVolumeField(w_, wVf_);
