@@ -56,15 +56,15 @@ bool mindlinDemirdzicPlateSolid::converged
 #ifdef OPENFOAM_NOT_EXTEND
     const SolverPerformance<scalar>& solverPerfw,
     const SolverPerformance<scalar>& solverPerfThetaX,
-    // const SolverPerformance<scalar>& solverPerfThetaY,
+    const SolverPerformance<scalar>& solverPerfThetaY,
 #else
     const lduSolverPerformance& solverPerfw,
     const lduSolverPerformance& solverPerfThetaX,
-    // const lduSolverPerformance& solverPerfThetaY,
+    const lduSolverPerformance& solverPerfThetaY,
 #endif
     const areaScalarField& w,
-    const areaScalarField& thetaX
-    // const areaScalarField& thetaY
+    const areaScalarField& thetaX,
+    const areaScalarField& thetaY
 )
 {
     // We will check a number of different residuals for convergence
@@ -81,7 +81,7 @@ bool mindlinDemirdzicPlateSolid::converged
                 )
             )()
         );
-/* 
+
     const scalar resThetaY =
     gMax
     (
@@ -93,7 +93,7 @@ bool mindlinDemirdzicPlateSolid::converged
             )
         )()
     );
- */
+
     const scalar residualw =
         gMax
         (
@@ -117,7 +117,7 @@ bool mindlinDemirdzicPlateSolid::converged
 
         bool convergedw = false;
         bool convergedThetaX = false;
-        // bool convergedThetaY = false;
+        bool convergedThetaY = false;
 
         if
         (
@@ -126,8 +126,8 @@ bool mindlinDemirdzicPlateSolid::converged
              &&
                 residualw < solutionTol()
             )
-         || solverPerfw.initialResidual() < alternativeTol()
-         || residualw < alternativeTol()
+        //  || solverPerfw.initialResidual() < alternativeTol()
+        //  || residualw < alternativeTol()
         )
         {
             convergedw = true;
@@ -140,13 +140,13 @@ bool mindlinDemirdzicPlateSolid::converged
              &&
                 resThetaX < solutionTol()
             )
-         || solverPerfThetaX.initialResidual() < alternativeTol()
-         || resThetaX < alternativeTol()
+        //  || solverPerfThetaX.initialResidual() < alternativeTol()
+        //  || resThetaX < alternativeTol()
         )
         {
             convergedThetaX = true;
         }
-/* 
+
         if
         (
             (
@@ -154,20 +154,18 @@ bool mindlinDemirdzicPlateSolid::converged
              &&
                 resThetaY < solutionTol()
             )
-         || solverPerfThetaY.initialResidual() < alternativeTol()
-         || resThetaY < alternativeTol()
+        //  || solverPerfThetaY.initialResidual() < alternativeTol()
+        //  || resThetaY < alternativeTol()
         )
         {
             convergedThetaY = true;
         }
- */
-        if (convergedw && convergedThetaX)
+
+        if (convergedw && (convergedThetaX && convergedThetaY))
+        // if (convergedThetaX && convergedThetaY)
         {
-            // if (convergedThetaX && convergedThetaY)
-            // {
-                Info<< "    The residuals have converged" << endl;
-                converged = true;
-            // }
+            Info<< "    The residuals have converged" << endl;
+            converged = true;
         }
     }
 
@@ -176,6 +174,7 @@ bool mindlinDemirdzicPlateSolid::converged
     if (iCorr == 0)
     {
         Info<< "    Corr, solnRes (w, thetaX, thetaY), relRes (w, thetaX, thetaY), iters (w, thetaX, thetaY)"
+        // Info<< "    Corr, solnRes (thetaX, thetaY), relRes (thetaX, thetaY), iters (thetaX, thetaY)"
             << endl;
     }
     else if (iCorr % infoFrequency() == 0 || converged)
@@ -183,13 +182,13 @@ bool mindlinDemirdzicPlateSolid::converged
         Info<< "    " << iCorr
             << ", " << solverPerfw.initialResidual()
             << ", " << solverPerfThetaX.initialResidual()
-            // << ", " << solverPerfThetaY.initialResidual()
+            << ", " << solverPerfThetaY.initialResidual()
             << ", " << tab << residualw
             << ", " << resThetaX
-            // << ", " << resThetaY
+            << ", " << resThetaY
             << ", " << tab << solverPerfw.nIterations()
             << ", " << solverPerfThetaX.nIterations()
-            // << ", " << solverPerfThetaY.nIterations()
+            << ", " << solverPerfThetaY.nIterations()
             << endl;
 
         if (converged)
@@ -207,6 +206,93 @@ bool mindlinDemirdzicPlateSolid::converged
     return converged;
 }
 
+
+bool mindlinDemirdzicPlateSolid::blockConverged
+(
+    const int iCorr,
+    const areaScalarField& w,
+    const areaScalarField& thetaX,
+    const areaScalarField& thetaY
+)
+{
+    // We will check a number of different residuals for convergence
+    bool converged = false;
+
+    const scalar resW =
+        gMax
+        (
+            (
+                mag(w - w.prevIter())
+               /max
+                (
+                    gMax(mag(w - w.oldTime())()), SMALL
+                )
+            )()
+        );
+
+    const scalar resThetaX =
+        gMax
+        (
+            (
+                mag(thetaX - thetaX.prevIter())
+               /max
+                (
+                    gMax(mag(thetaX - thetaX.oldTime())()), SMALL
+                )
+            )()
+        );
+
+    const scalar resThetaY =
+        gMax
+        (
+            (
+                mag(thetaY - thetaY.prevIter())
+               /max
+                (
+                    gMax(mag(thetaY - thetaY.oldTime())()), SMALL
+                )
+            )()
+        );
+
+    if
+    (
+        resW < solutionTol()
+     && (
+            resThetaX < solutionTol()
+         && resThetaY < solutionTol()
+        )
+    )
+    {
+        converged = true;
+    }
+
+    // Print residual information
+    if (iCorr == 0)
+    {
+        Info<< "    Corr, solnRes (w, thetaX, thetaY)"
+            << endl;
+    }
+    else if (iCorr % infoFrequency() == 0 || converged)
+    {
+        Info<< "    " << iCorr
+            << ", " << tab << resW
+            << ", " << resThetaX
+            << ", " << resThetaY
+            << endl;
+
+        if (converged)
+        {
+            Info<< endl;
+        }
+    }
+    else if (iCorr == nCorr() - 1)
+    {
+        maxIterReached()++;
+        Warning
+            << "Max iterations reached within the w-theta loop" << endl;
+    }
+    return converged;
+}
 
 const fvPatch& mindlinDemirdzicPlateSolid::areaPatch() const
 {
@@ -353,6 +439,321 @@ void mindlinDemirdzicPlateSolid::calcAreaPatches() const
 }
 
 
+const vectorField mindlinDemirdzicPlateSolid::calculateShearForceContribution
+(
+    const edgeVectorField& shearForceEdge
+) const
+{
+    // Initialise the source contribution vector
+    vectorField sf2source(aMesh_.faceCells().size(), vector::zero);
+
+    // Mesh information required
+    edgeVectorField edgeBiNormal("edgeBiNormal", aMesh_.Le()/aMesh_.magLe());
+    const labelList& own(aMesh_.owner());
+    const labelList& nei(aMesh_.neighbour());
+    const edgeScalarField& le(aMesh_.magLe());
+    const faBoundaryMesh& faBouMesh(aMesh_.boundary());
+    const edgeVectorField& edgeCentres(aMesh_.edgeCentres());
+    const areaVectorField& cellCentres(aMesh_.areaCentres());
+    const scalarField leI(le.internalField());
+    // const labelList& edgeOwn(aMesh_.edgeOwner());
+
+    const vectorField shearForceI(shearForceEdge.internalField());
+    const vectorField edgeBiNormalI(edgeBiNormal.internalField());
+
+    // forAll(thetaX_.internalField(), cellI)
+    // {
+    //     forAll(aMesh_.internalEdges(), edgeI)
+    //     {
+    //         if (own[edgeI] == cellI)
+    //         {
+    //             // thetaXEqn.source()[cellI] -=
+    //             sf2source[cellI].x() -=
+    //                 leI[edgeI]
+    //                 *(
+    //                     edgeCentres[edgeI].component(vector::X)
+    //                   - cellCentres[cellI].component(vector::X)
+    //                 )
+    //                 *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+    //             // thetaYEqn.source()[cellI] -=
+    //             sf2source[cellI].y() -=
+    //                 leI[edgeI]
+    //                 *(
+    //                     edgeCentres[edgeI].component(vector::Y)
+    //                   - cellCentres[cellI].component(vector::Y)
+    //                 )
+    //                 *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+    //         }
+    //         else if (nei[edgeI] == cellI)
+    //         {
+    //             // Note: we use "+=" as nx and ny need to be flipped
+    //             // thetaXEqn.source()[cellI] +=
+    //             sf2source[cellI].x() +=
+    //                 leI[edgeI]
+    //                 *(
+    //                     edgeCentres[edgeI].component(vector::X)
+    //                   - cellCentres[cellI].component(vector::X)
+    //                 )
+    //                 *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+    //             // Note: we use "+=" as nx and ny need to be flipped
+    //             // thetaYEqn.source()[cellI] +=
+    //             sf2source[cellI].y() +=
+    //                 leI[edgeI]
+    //                 *(
+    //                     edgeCentres[edgeI].component(vector::Y)
+    //                   - cellCentres[cellI].component(vector::Y)
+    //                 )
+    //                 *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+    //         }
+    //     }
+    // }
+
+    // Directly add source contributions to own and nei by looping over edges
+    forAll(aMesh_.internalEdges(), edgeI)
+    {
+        const scalar sfCoeff =
+            leI[edgeI]*(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+
+        const vector dROwn = (edgeCentres[edgeI] - cellCentres[own[edgeI]]);
+        const vector dRNei = (edgeCentres[edgeI] - cellCentres[nei[edgeI]]);
+
+        sf2source[own[edgeI]].x() -= sfCoeff*dROwn.x();
+        sf2source[own[edgeI]].y() -= sfCoeff*dROwn.y();
+
+        // Note: we use "+=" as nx and ny need to be flipped
+        sf2source[nei[edgeI]].x() += sfCoeff*dRNei.x();
+        sf2source[nei[edgeI]].y() += sfCoeff*dRNei.y();
+    }
+
+    forAll(thetaX_.boundaryField(), patchI)
+    {
+        const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
+        // const vectorField pCellCentres(cellCentres.boundaryField()[patchI]);
+        const faePatchVectorField pShearForce(shearForceEdge.boundaryField()[patchI]);
+        const vectorField pEdgeBiNormal(edgeBiNormal.boundaryField()[patchI]);
+
+        forAll(thetaX_.boundaryField()[patchI], pEdge)
+        {
+            // Boundary cell index
+            const label bI(faBouMesh[patchI].edgeFaces()[pEdge]);
+            const scalar leB(le.boundaryField()[patchI][pEdge]);
+
+            const scalar pSfCoeff =
+                leB*(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+
+            const vector pDr = (pEdgeCentres[pEdge] - cellCentres[bI]);
+
+            sf2source[bI].x() -= pSfCoeff*pDr.x();
+            sf2source[bI].y() -= pSfCoeff*pDr.y();
+
+            // // thetaXEqn.source()[bI] -=
+            // sf2source[bI].x() -=
+            //     leB
+            //     *(
+            //         pEdgeCentres[pEdge].component(vector::X)
+            //       - pCellCentres[pEdge].component(vector::X)
+            //     )
+            // *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+
+            // // thetaYEqn.source()[bI] -=
+            // sf2source[bI].y() -=
+            //     leB
+            //     *(
+            //         pEdgeCentres[pEdge].component(vector::Y)
+            //       - pCellCentres[pEdge].component(vector::Y)
+            //     )
+            // *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+        }
+    }
+    return sf2source;
+}
+
+const vectorField mindlinDemirdzicPlateSolid::calculateGradientThetaContribution
+(
+    const edgeVectorField& gradthetaXEdge,
+    const edgeVectorField& gradthetaYEdge
+) const
+{
+    // Initialise the source contribution vector
+    vectorField gradTh2Source(aMesh_.faceCells().size(), vector::zero);
+
+    // Mesh information required
+    edgeVectorField edgeBiNormal("edgeBiNormal", aMesh_.Le()/aMesh_.magLe());
+    const labelList& own(aMesh_.owner());
+    const labelList& nei(aMesh_.neighbour());
+    const edgeScalarField& le(aMesh_.magLe());
+    const faBoundaryMesh& faBouMesh(aMesh_.boundary());
+    const scalarField leI(le.internalField());
+
+    const scalarField nx(edgeBiNormal.internalField().component(vector::X));
+    const scalarField ny(edgeBiNormal.internalField().component(vector::Y));
+
+    // Extracting individual components of gradTheta at edges
+    const edgeScalarField gradThXX
+    (
+        IOobject
+        (
+            "gradThXX",
+            runTime().timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        gradthetaXEdge.component(vector::X)
+    );
+    const edgeScalarField gradThXY
+    (
+        IOobject
+        (
+            "gradThXY",
+            runTime().timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        gradthetaXEdge.component(vector::Y)
+    );
+    const edgeScalarField gradThYX
+    (
+        IOobject
+        (
+            "gradThYX",
+            runTime().timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        gradthetaYEdge.component(vector::X)
+    );
+    const edgeScalarField gradThYY
+    (
+        IOobject
+        (
+            "gradThYY",
+            runTime().timeName(),
+            mesh(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        gradthetaYEdge.component(vector::Y)
+    );
+
+    // Constants after removing dimensions
+    const scalar D(bendingStiffness_.value());
+    const scalar nu(nu_.value());
+
+    // Contribution to internal edges
+    // The terms when put in source (RHS) will change
+    // signs. So the owner contributions are negative
+    // and neighbour is positive. // CHECK WITH IVAN??
+    forAll(aMesh_.internalEdges(), eI)
+    {
+        // thetaX part
+        // thetaXEqn.source()[own[eI]] -=
+        gradTh2Source[own[eI]].x() -=
+            D*leI[eI]
+        *(
+            nu*gradThYY[eI]*nx[eI]
+          + 0.5*(1 - nu)*gradThYX[eI]*ny[eI]
+          - 0.5*(1 + nu)*gradThXY[eI]*ny[eI]
+        );
+
+        // thetaX part
+        // thetaXEqn.source()[nei[eI]] +=
+        gradTh2Source[nei[eI]].x() +=
+            D*leI[eI]
+        *(
+            nu*gradThYY[eI]*nx[eI]
+          + 0.5*(1 - nu)*gradThYX[eI]*ny[eI]
+          - 0.5*(1 + nu)*gradThXY[eI]*ny[eI]
+        );
+
+        // thetaY part
+        // thetaYEqn.source()[own[eI]] -=
+        gradTh2Source[own[eI]].y() -=
+            D*leI[eI]
+        *(
+            0.5*(1 - nu)*gradThXY[eI]*nx[eI]
+          + nu*gradThXX[eI]*ny[eI]
+          - 0.5*(1 + nu)*gradThYX[eI]*nx[eI]
+        );
+
+        // thetaY part
+        // thetaYEqn.source()[nei[eI]] +=
+        gradTh2Source[nei[eI]].y() +=
+            D*leI[eI]
+        *(
+            0.5*(1 - nu)*gradThXY[eI]*nx[eI]
+          + nu*gradThXX[eI]*ny[eI]
+          - 0.5*(1 + nu)*gradThYX[eI]*nx[eI]
+        );
+    }
+
+    // Boundary edges
+    forAll(thetaX_.boundaryField(), patchI)
+    {
+        const faePatchScalarField pGradThXX
+        (
+            gradThXX.boundaryField()[patchI]
+        );
+
+        const faePatchScalarField pGradThXY
+        (
+            gradThXY.boundaryField()[patchI]
+        );
+
+        const faePatchScalarField pGradThYX
+        (
+            gradThYX.boundaryField()[patchI]
+        );
+
+        const faePatchScalarField pGradThYY
+        (
+            gradThYY.boundaryField()[patchI]
+        );
+
+        const scalarField nxb
+        (
+            edgeBiNormal.boundaryField()[patchI].component(vector::X)
+        );
+
+        const scalarField nyb
+        (
+            edgeBiNormal.boundaryField()[patchI].component(vector::Y)
+        );
+
+        forAll(thetaX_.boundaryField()[patchI], pEdge)
+        {
+            // Boundary cell index
+            const label bI = faBouMesh[patchI].edgeFaces()[pEdge];
+            const scalar leB = le.boundaryField()[patchI][pEdge];
+
+            // thetaX part
+            // thetaXEqn.source()[bI] -=
+            gradTh2Source[bI].x() -=
+                D*leB
+            *(
+                nu*pGradThYY[pEdge]*nxb[pEdge]
+              + 0.5*(1 - nu)*pGradThYX[pEdge]*nyb[pEdge]
+              - 0.5*(1 + nu)*pGradThXY[pEdge]*nyb[pEdge]
+            );
+
+            // thetaY part
+            // thetaYEqn.source()[bI] -=
+            gradTh2Source[bI].y() -=
+                D*leB
+            *(
+                0.5*(1 - nu)*pGradThXY[pEdge]*nxb[pEdge]
+              + nu*pGradThXX[pEdge]*nyb[pEdge]
+              - 0.5*(1 + nu)*pGradThYX[pEdge]*nxb[pEdge]
+            );
+        }
+    }
+
+    return gradTh2Source;
+}
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
@@ -370,7 +771,7 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
             "w",
             runTime.timeName(),
             mesh(),
-            IOobject::MUST_READ,
+            IOobject::NO_READ,
             IOobject::AUTO_WRITE
         ),
         aMesh_
@@ -387,6 +788,18 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
         ),
         mesh(),
         dimensionedScalar("zero", dimLength, 0.0)
+    ),
+    wAnalytical_
+    (
+        IOobject
+        (
+            "w.analytical",
+            runTime.timeName(),
+            mesh(),
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        aMesh_
     ),
     gradW_
     (
@@ -512,6 +925,7 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
     shearStrainStiffness_("zero",dimForce/dimLength, 0.0),
     areaPatchID_(-1),
     areaShadowPatchID_(-1),
+    coupled_(solidModelDict().getOrDefault<bool>("coupled", false)),
     debug_(solidModelDict().getOrDefault<bool>("debug", true))
 {
     const PtrList<mechanicalLaw>& mechLaws = mechanical();
@@ -541,10 +955,8 @@ mindlinDemirdzicPlateSolid::mindlinDemirdzicPlateSolid
     bendingStiffness_ = E_*pow(h_, 3)/(12*(1 - pow(nu_, 2)));
     // torsionalStiffness_ = 0.5*(1 - nu_)*bendingStiffness_;
     shearStrainStiffness_ = shearCorrectionFactor_*0.5*E_*h_/(1 + nu_);
-    // shearStrainStiffness_ = 0.5*E_*h_/(1 + nu_);
 
     Info<< "Plate mechanical properties\n"
-        << "Poisson ratio \n" << nu_ << "\n"
         << "Bending Stiffness\n" << bendingStiffness_ << "\n"
         // << "\nTorsional Stiffness\n" << torsionalStiffness_ << "\n"
         << "\nShear strain stiffness\n" << shearStrainStiffness_
@@ -568,11 +980,6 @@ bool mindlinDemirdzicPlateSolid::evolve()
         solidModelDict().lookup("compactEdgeNormalGrad")
     );
 
-    // // Flag for printing statements
-    // const Switch printStatements
-    // (
-    //     solidModelDict().lookup("printStatements")
-    // );
     // Mesh update loop
     do
     {
@@ -591,14 +998,41 @@ bool mindlinDemirdzicPlateSolid::evolve()
         blockLduMatrix::debug = 0;
 #endif
 
-        Info<< "Solving the Mindlin (thick plates) equation for primary variables w, thetaX, thetaY - Demirdzic's Approach" << endl;
-
-        Info<< "\nUsing segregated approach to solve for w, thetaX, and thetaY eqns "
-            << "separately and iteratively update them!" << endl;
+        Info<< "Solving the Mindlin (thick plates) equation for "
+            << "primary variables w, thetaX, thetaY - Demirdzic's Approach"
+            << endl;
 
         // Philip testing
         const scalar alphaW(readScalar(solidModelDict().lookup("alphaW")));
         const scalar alphaTheta(readScalar(solidModelDict().lookup("alphaTheta")));
+
+        // Read the time scheme from the test case
+        // Read ddtScheme name from system/faSchemes
+        const bool ddtScheme(aMesh_.ddtSchemes().found("ddt(w)"));
+        const word ddtSchemeName
+        (
+            ddtScheme
+            ?
+            (aMesh_.ddtSchemes().lookup("ddt(w)"))
+            :
+            (aMesh_.ddtSchemes().lookup("default"))
+        );
+
+        // Read d2dt2Scheme name from system/faSchemes
+        const bool d2dt2Scheme(aMesh_.d2dt2Schemes().found("d2dt2(w)"));
+        const word d2dt2SchemeName
+        (
+            d2dt2Scheme
+            ?
+            (aMesh_.d2dt2Schemes().lookup("d2dt2(w)"))
+            :
+            (aMesh_.d2dt2Schemes().lookup("default"))
+        );
+
+        WarningIn("evolve() function in mindlin (thick) plate solid model")<< nl
+            << "d2dt2Scheme in system/faSchemes cannot take steadyState as a valid keyword!" << nl
+            << "If you want plate-case to be solved for steady state condition, "
+            << "set ddtScheme to be steadyState instead!! " << endl;
 
 
         // Note: To get in-plane normal unit vectors to an edge, aMesh_.Le()
@@ -611,14 +1045,31 @@ bool mindlinDemirdzicPlateSolid::evolve()
         edgeVectorField edgeBiNormal("edgeBiNormal", aMesh_.Le()/aMesh_.magLe());
 
         // Mesh information required
+        const label nCells(aMesh_.faceCells().size());
         const labelList& own(aMesh_.owner());
         const labelList& nei(aMesh_.neighbour());
-        // const DimensionedField<scalar, areaMesh>& Sf(aMesh_.S());
+        const edgeScalarField& interpWeights(aMesh_.weights());
+        const DimensionedField<scalar, areaMesh>& Sf(aMesh_.S());
         const edgeScalarField& le(aMesh_.magLe());
         const faBoundaryMesh& faBouMesh(aMesh_.boundary());
         const edgeVectorField& edgeCentres(aMesh_.edgeCentres());
         const areaVectorField& cellCentres(aMesh_.areaCentres());
+        const edgeScalarField& deltaCoeffs(aMesh_.deltaCoeffs());
+        // const labelList& edgeOwn(aMesh_.edgeOwner());
+        // const labelList& edgeNei(aMesh_.edgeNeighbour());
 
+        // Info<< " aMesh edgeCentres " << edgeCentres << endl;
+        // Info<< " aMesh cellCentres " << cellCentres << endl;
+        // Info<< " aMesh owners " << own << endl;
+        // Info<< " aMesh Nei " << nei << endl;
+
+
+        const scalarField nx(edgeBiNormal.internalField().component(vector::X));
+        const scalarField ny(edgeBiNormal.internalField().component(vector::Y));
+
+        // NOTE!! - This theta construction was outside the do-loop in
+        // previous commit. So, the theta contribution was not getting
+        // added to w equation. But now that I add theta contribution
         // Constructing the theta vector from components
         areaVectorField theta
         (
@@ -631,536 +1082,782 @@ bool mindlinDemirdzicPlateSolid::evolve()
                 IOobject::NO_WRITE
             ),
             // Combine components using unit vectors
-            thetaX_*vector(1, 0, 0)
-          + thetaY_*vector(0, 1, 0)
-          + dimensionedScalar("zero", thetaX_.dimensions(), 0.0)*vector(0, 0, 1)
+            thetaX_ * vector(1, 0, 0)
+            + thetaY_ * vector(0, 1, 0)
+            + dimensionedScalar("zero", thetaX_.dimensions(), 0.0) * vector(0, 0, 1)
         );
 
+        // Store the previous iteration values for computing source vector
+        // The storePrevIter values are also brought inside this do-loop
+        // Should not make much difference.
 
-        do
+        // w_.storePrevIter();
+        // thetaX_.storePrevIter();
+        // thetaY_.storePrevIter();
+        // gradW_.storePrevIter();
+        // gradThetaX_.storePrevIter();
+        // gradThetaY_.storePrevIter();
+
+        // w_.storeOldTime();
+        // thetaX_.storeOldTime();
+        // thetaY_.storeOldTime();
+        // gradW_.storeOldTime();
+        // gradThetaX_.storeOldTime();
+        // gradThetaY_.storeOldTime();
+
+        // Approach 1: Block - coupled formulation, Solve w, thetaX, and thetaY
+        // equations simulataneously
+        if (coupled_)
         {
-            // Update the theta field with new thetaX_ and thetaY_
-            theta = thetaX_*vector(1,0,0) + thetaY_*vector(0, 1, 0);
-            // Info<< "thetaX " << thetaX_ << " theta " << theta << endl;
 
-            // Theta vector at edge centres
-            const edgeVectorField thetaEdge(fac::interpolate(theta));
-
-            // Store the previous iteration values for computing source vector
-            w_.storePrevIter();
-            thetaX_.storePrevIter();
-            thetaY_.storePrevIter();
-            gradW_.storePrevIter();
-            gradThetaX_.storePrevIter();
-            // gradThetaY_.storePrevIter();
-
-            // Info<< "thetaEdge " << thetaEdge << endl;
-
-            // Solve w equation
-            // Also, "==" complains so we will move all terms to left
-            faScalarMatrix wEqn
-            (
-                fam::laplacian(shearStrainStiffness_, w_)
-              - fac::div(shearStrainStiffness_*theta)
-              - p_
-            );
-
-            // Add stabilisation term
-            // laplacian(w) is mathematically the same as div(grad(w)) but
-            // numerically different for a given mesh (but they converge to the
-            if (alphaW > 0.0)
+            Info<< "\nUsing implicit block-coupled approach to solve "
+                << "Mindlin equations for w, thetaX, and thetaY eqns"
+                << endl;
+            do
             {
-                wEqn +=
-                    alphaW
-                   *(
-                        fac::div(shearStrainStiffness_*gradW_)
-                      - fac::laplacian(shearStrainStiffness_, w_)
-                    );
-            }
 
-            // Relax the linear system
-            wEqn.relax();
+                w_.storePrevIter();
+                thetaX_.storePrevIter();
+                thetaY_.storePrevIter();
+                gradW_.storePrevIter();
+                gradThetaX_.storePrevIter();
+                gradThetaY_.storePrevIter();
 
-            // Solve the linear system
-            solverPerfw = wEqn.solve();
+                // Update boundary conditions
+                w_.correctBoundaryConditions();
+                thetaX_.correctBoundaryConditions();
+                thetaY_.correctBoundaryConditions();
 
-            // Relax the field
-            w_.relax();
+                // Theta vector at edge centres
+                const edgeVectorField thetaEdge(fac::interpolate(theta));
 
-            // Update the gradient of displacement
-            gradW_ = fac::grad(w_);
+                // Initialise block matrix
+                // (3 scalar equations of w, thetaX, and thetaY per cell)
+                SparseMatrixTemplate<scalar> matrix(3*nCells);
 
-            /*---------------------------------------------------------------*/
-            /*---------------------------------------------------------------*/
-            // 2 - thetaX eqn
-            // thetaX_.storePrevIter();
+                matrix.clear();
 
-            // Initialise thetaX equation with implicit laplacian terms
-            faScalarMatrix thetaXEqn
-            (
-                fam::laplacian(bendingStiffness_, thetaX_)
-               - fam::Sp(shearStrainStiffness_, thetaX_)
-               + shearStrainStiffness_*thetaX_
-            );
+                // Initialise source vector
+                scalarField source(3*nCells, 0.0);
 
-/*             // Initialise thetaY equation with implicit laplacian terms
-            faScalarMatrix thetaYEqn
-            (
-                fam::laplacian(bendingStiffness_, thetaY_)
-              - fam::Sp(shearStrainStiffness_, thetaY_)
-              + shearStrainStiffness_*thetaY_
-            );
- */
-            if (alphaTheta > 0.0)
-            {
-                thetaXEqn +=
-                    alphaTheta
-                   *(
-                        fac::div(bendingStiffness_*gradThetaX_)
-                      - fac::laplacian(bendingStiffness_, thetaX_)
-                    );
+                // Initialise solution field
+                scalarField solveWTheta(3*nCells, 0.0);
 
-/*                 thetaYEqn +=
-                    alphaTheta
-                   *(
-                        fac::div(bendingStiffness_*gradThetaY_)
-                      - fac::laplacian(bendingStiffness_, thetaY_)
-                    ); */
-            }
+                // d2dt2 term
+                // Note: when running a case, it says available d2dt2 schemes are only Euler,
+                // When the test case is steadyState, read ddtScheme to be steadyState and inertial
+                // terms of d2dt2(w) are not added to the matrix.
+                const faScalarMatrix d2dt2W(rho_*h_*fam::d2dt2(w_));
+                const scalarField& d2dt2WDiag = d2dt2W.diag();
+                const scalarField& d2dt2WSource = d2dt2W.source();
 
-            // NOTE!! - How to get the moment arm (x - x_P) and (y - y_P)?
-            // For an orthogonal uniform mesh, the above terms are
-            // half of cell to cell distances and are the equal when we
-            // look from the owner and neighbour side. The only difference
-            // is that the sign of (x - x_P) is positive for owner and
-            // negative for neighbour. CHECK WITH IVAN?
+                const faScalarMatrix d2dt2ThetaX((1/12)*rho_*pow(h_,3)*fam::d2dt2(thetaX_));
+                const scalarField& d2dt2ThetaXDiag = d2dt2ThetaX.diag();
+                const scalarField& d2dt2ThetaXSource = d2dt2ThetaX.source();
 
-            // Initialise the inverse of delta (cell to cell distance)
-            // const edgeScalarField invDeltaCoeffs
-            // (
-            //     IOobject
-            //     (
-            //         "invDeltaCoeffs",
-            //         runTime().timeName(),
-            //         mesh(),
-            //         IOobject::NO_READ,
-            //         IOobject::AUTO_WRITE
-            //     ),
-            //     1.0/aMesh_.deltaCoeffs()
-            // );
-
-            // const scalarField invDeltaI(invDeltaCoeffs.internalField());
-
-            /*---------------------------------------------------------------*/
-            /*---------------------------------------------------------------*/
-            // \int_{dSz} (x - x_p) p ds - moment arm due to pressure term
+                const faScalarMatrix d2dt2ThetaY((1/12)*rho_*pow(h_,3)*fam::d2dt2(thetaY_));
+                const scalarField& d2dt2ThetaYDiag = d2dt2ThetaY.diag();
+                const scalarField& d2dt2ThetaYSource = d2dt2ThetaY.source();
 
 
-            // Firstly, it does not make sense how to multiply (x_e - x_P)
-            // that is defined at an edge with cell centre pressure field
-            // CHECK WITH IVAN..
-            // Also, according to Torlak, this term is zero if
-            // coordinate system is assumed at cell centre.
-            // forAll(thetaXEqn.diag(), cI)
-            // {
-            //     thetaXEqn.source()[cI] += invDeltaI[cI]*p_[cI]*mag(Sf[cI]);
-            //     thetaYEqn.source()[cI] += invDeltaI[cI]*p_[cI]*mag(Sf[cI]);
-            // }
+                /*-----------LAPLACIAN TERMS FOR BLOCK DIAGONALS--------------*/
+                // Calculate Laplacian discretisation of w
+                const faScalarMatrix laplacianW
+                (
+                    fam::laplacian(shearStrainStiffness_, w_)
+                );
 
+                const scalarField& lapWDiag = laplacianW.diag();
+                const scalarField& lapWUpper = laplacianW.upper();
 
-            /*---------------------------------------------------------------*/
-            /*---------------------------------------------------------------*/
+                const FieldField<Field, scalar>&
+                    lapWIntCoeffs = laplacianW.internalCoeffs();
+                const FieldField<Field, scalar>&
+                    lapWBouCoeffs = laplacianW.boundaryCoeffs();
 
-            // SHEAR FORCE MOMENT ARM TERM
-            // The last s_{\phi \l} term of thetaX and thetaY variables
-            // in Demirdzic 1997 plate paper.
-            // \int_{dl} Gamma (x - x_P) (grad(w) - theta) \cdot n dl
-            // \Sum_e Gamma (x_e - x_P) (grad(w)_e - theta_e) \cdot n_e l_e
+                // Calculate Laplacian discretisation of thetaX
+                const faScalarMatrix laplacianThetaX
+                (
+                    fam::laplacian(bendingStiffness_, thetaX_)
+                );
 
-            // How to get (x_e - x_P) for every edge 'e'? This value is
-            // different if looked from the owner side or neighbour side
-            // and also contains the SIGN!!!
+                const scalarField& lapThetaXDiag = laplacianThetaX.diag();
+                const scalarField& lapThetaXUpper = laplacianThetaX.upper();
 
-            // BUT: for orthogonal uniform mesh, it is same. Use that for now!!
-            // | (x_e - x_P) | = 0.5*inv(mesh.deltaCoeffs()) for internal edges
+                const FieldField<Field, scalar>&
+                    lapThetaXIntCoeffs = laplacianThetaX.internalCoeffs();
+                const FieldField<Field, scalar>&
+                    lapThetaXBouCoeffs = laplacianThetaX.boundaryCoeffs();
 
-            // SIGN: (x_e - x_P) \cdot n_e will always be positive as they
-            // cancel each other's signs. CHECK WITH IVAN AGAIN.
+                // Calculate Laplacian discretisation of thetaY
+                const faScalarMatrix laplacianThetaY
+                (
+                    fam::laplacian(bendingStiffness_, thetaY_)
+                );
 
-            edgeVectorField gradWEdge(fac::interpolate(gradW_));
+                const scalarField& lapThetaYDiag = laplacianThetaY.diag();
+                const scalarField& lapThetaYUpper = laplacianThetaY.upper();
 
-            // Avoid oscillations in gradient calculations
-            if (compactEdgeNormalGrad)
-            {
-                const edgeScalarField lnGradWEdge(fac::lnGrad(w_));
-                gradWEdge +=
-                    lnGradWEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradWEdge);
-            }
+                const FieldField<Field, scalar>&
+                    lapThetaYIntCoeffs = laplacianThetaY.internalCoeffs();
+                const FieldField<Field, scalar>&
+                    lapThetaYBouCoeffs = laplacianThetaY.boundaryCoeffs();
 
-            const vectorField gradWEdgeI(gradWEdge.internalField());
-            const scalarField leI(le.internalField());
+                // Explicit shear force calculation
+                // const areaVectorField gradW(fac::grad(w_));
+                // edgeVectorField gradWEdge(fac::interpolate(gradW));
 
-            // // Shear strain constant after removing dimension (Gamma = G*h)
-            // const scalar Gamma(shearStrainStiffness_.value());
+                // Avoid oscillations in gradient calculations
+                // if (compactEdgeNormalGrad)
+                // {
+                //     const edgeScalarField lnGradWEdge(fac::lnGrad(w_));
+                //     gradWEdge +=
+                //         lnGradWEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradWEdge);
+                // }
 
-            const edgeVectorField shearForceEdge
-            (
-                shearStrainStiffness_*(gradWEdge - thetaEdge)
-            );
+                // const edgeVectorField shearForceEdge
+                // (
+                //     shearStrainStiffness_*(gradWEdge - thetaEdge)
+                // );
 
-            const vectorField shearForceI(shearForceEdge.internalField());
-            const vectorField edgeBiNormalI(edgeBiNormal.internalField());
+                // Removed the thetaEdge term because I have added it implicitly now
+                // const edgeVectorField shearForceEdge
+                // (
+                //     shearStrainStiffness_*gradWEdge
+                // );
 
-            // APPROACH 2 (Loop over cells and for each cell Loop over edges)
-            // forAll(thetaX_.internalField(), cellI)
-            // {
-            //     // Info<< "cellI " << cellI << endl;
-            //     forAll(aMesh_.internalEdges(), edgeI)
-            //     {
-            //         if (own[edgeI] == cellI)
-            //         {
-            //             // Info<< "Adding own contribution of edgeI " << edgeI << " to source at cellI " << cellI << endl;
+                // This vectorField recieves the contribution to source
+                // along with the changed sign when terms are moved to RHS
+                // const vectorField shearForceContrib =
+                //     calculateShearForceContribution(shearForceEdge);
 
-            //             thetaXEqn.source()[cellI] -=
-            //                 leI[edgeI]
-            //                *(
-            //                     edgeCentres[edgeI].component(vector::X)
-            //                   - cellCentres[cellI].component(vector::X)
-            //                 )
-            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
+                // Explicit gradient of theta calculation
+                // Interpolate grad(thetaX), grad(thetaY) to edges
+                edgeVectorField gradthetaXEdge(fac::interpolate(gradThetaX_));
+                edgeVectorField gradthetaYEdge(fac::interpolate(gradThetaY_));
 
-            //             thetaYEqn.source()[cellI] -=
-            //                 leI[edgeI]
-            //                *(
-            //                     edgeCentres[edgeI].component(vector::Y)
-            //                   - cellCentres[cellI].component(vector::Y)
-            //                 )
-            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-            //         }
-            //         else if (nei[edgeI] == cellI)
-            //         {
-            //             // Note: we use "+=" as nx and ny need to be flipped
-            //             thetaXEqn.source()[cellI] +=
-            //                 leI[edgeI]
-            //                *(
-            //                     edgeCentres[edgeI].component(vector::X)
-            //                   - cellCentres[cellI].component(vector::X)
-            //                 )
-            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-
-            //             // Note: we use "+=" as nx and ny need to be flipped
-            //             thetaYEqn.source()[cellI] +=
-            //                 leI[edgeI]
-            //                *(
-            //                     edgeCentres[edgeI].component(vector::Y)
-            //                   - cellCentres[cellI].component(vector::Y)
-            //                 )
-            //                *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-            //         }
-            //     }
-            // }
-
-            // APPROACH 1 - Loop over edges directly!!
-            // Loop over internal edges
-            forAll(aMesh_.internalEdges(), edgeI)
-            {
-                thetaXEqn.source()[own[edgeI]] -=
-                    leI[edgeI]
-                    *(
-                        edgeCentres[edgeI].component(vector::X)
-                      - cellCentres[own[edgeI]].component(vector::X)
-                    )
-                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-
-/*                 thetaYEqn.source()[own[edgeI]] -=
-                    leI[edgeI]
-                    *(
-                        edgeCentres[edgeI].component(vector::Y)
-                      - cellCentres[own[edgeI]].component(vector::Y)
-                    )
-                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
- */
-                // Note: we use "+=" as nx and ny need to be flipped
-                thetaXEqn.source()[nei[edgeI]] +=
-                    leI[edgeI]
-                    *(
-                        edgeCentres[edgeI].component(vector::X)
-                      - cellCentres[nei[edgeI]].component(vector::X)
-                    )
-                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
-
-/*                 // Note: we use "+=" as nx and ny need to be flipped
-                thetaYEqn.source()[nei[edgeI]] +=
-                    leI[edgeI]
-                    *(
-                        edgeCentres[edgeI].component(vector::Y)
-                      - cellCentres[nei[edgeI]].component(vector::Y)
-                    )
-                    *(shearForceI[edgeI] & edgeBiNormalI[edgeI]);
- */
-            }
-
-            // Loop over all boundary edges
-            forAll(thetaX_.boundaryField(), patchI)
-            {
-                const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
-                // const vectorField pCellCentres(cellCentres.boundaryField()[patchI]);
-                const vectorField pShearForce(shearForceEdge.boundaryField()[patchI]);
-                const vectorField pEdgeBiNormal(edgeBiNormal.boundaryField()[patchI]);
-
-                forAll(thetaX_.boundaryField()[patchI], pEdge)
+                // Avoid oscillations in gradient calculations
+                if (compactEdgeNormalGrad)
                 {
-                    // Boundary cell index
-                    const label bI(faBouMesh[patchI].edgeFaces()[pEdge]);
-                    const scalar leB(le.boundaryField()[patchI][pEdge]);
+                    const edgeScalarField lnGradThetaXEdge(fac::lnGrad(thetaX_));
+                    const edgeScalarField lnGradThetaYEdge(fac::lnGrad(thetaY_));
 
-                    // Note: We need to access cells that own the edge
-                    // cellCentres[bI] and not pCellCentres[bI] as it does not exist
-                    thetaXEqn.source()[bI] -=
-                        leB
-                       *(
-                            pEdgeCentres[pEdge].component(vector::X)
-                          - cellCentres[bI].component(vector::X)
-                        )
-                       *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
+                    gradthetaXEdge +=
+                        lnGradThetaXEdge*edgeBiNormal
+                      - (sqr(edgeBiNormal) & gradthetaXEdge);
 
-/*                     thetaYEqn.source()[bI] -=
-                        leB
-                       *(
-                            pEdgeCentres[pEdge].component(vector::Y)
-                          - cellCentres[bI].component(vector::Y)
-                        )
-                       *(pShearForce[pEdge] & pEdgeBiNormal[pEdge]);
- */
+                    gradthetaYEdge +=
+                        lnGradThetaYEdge*edgeBiNormal
+                      - (sqr(edgeBiNormal) & gradthetaYEdge);
                 }
-            }
 
-            /*---------------------------------------------------------------*/
-            /*---------------------------------------------------------------*/
-            // GRADIENT THETA TERMS OF THE SOURCE
-            // The first three terms of s_{\phi \l} term of thetaX and thetaY variables
-            // in Demirdzic 1997 plate paper.
-
-            const scalarField nx(edgeBiNormal.internalField().component(vector::X));
-            const scalarField ny(edgeBiNormal.internalField().component(vector::Y));
-
-            // Interpolate grad(thetaX), grad(thetaY) to edges
-            edgeVectorField gradthetaXEdge(fac::interpolate(gradThetaX_));
-            edgeVectorField gradthetaYEdge(fac::interpolate(gradThetaY_));
-
-            // Info<< "gradthXE " << gradthetaXEdge << endl;
-
-            // Avoid oscillations in gradient calculations
-            if (compactEdgeNormalGrad)
-            {
-                const edgeScalarField lnGradThetaXEdge(fac::lnGrad(thetaX_));
-                const edgeScalarField lnGradThetaYEdge(fac::lnGrad(thetaY_));
-
-                gradthetaXEdge +=
-                    lnGradThetaXEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradthetaXEdge);
-
-                gradthetaYEdge +=
-                    lnGradThetaYEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradthetaYEdge);
-            }
-
-            // Extracting individual components of gradTheta at edges
-            const edgeScalarField gradThXX
-            (
-                IOobject
-                (
-                    "gradThXX",
-                    runTime().timeName(),
-                    mesh(),
-                    IOobject::NO_READ,
-                    IOobject::AUTO_WRITE
-                ),
-                gradthetaXEdge.component(vector::X)
-            );
-            const edgeScalarField gradThXY
-            (
-                IOobject
-                (
-                    "gradThXY",
-                    runTime().timeName(),
-                    mesh(),
-                    IOobject::NO_READ,
-                    IOobject::AUTO_WRITE
-                ),
-                gradthetaXEdge.component(vector::Y)
-            );
-            const edgeScalarField gradThYX
-            (
-                IOobject
-                (
-                    "gradThYX",
-                    runTime().timeName(),
-                    mesh(),
-                    IOobject::NO_READ,
-                    IOobject::AUTO_WRITE
-                ),
-                gradthetaYEdge.component(vector::X)
-            );
-            const edgeScalarField gradThYY
-            (
-                IOobject
-                (
-                    "gradThYY",
-                    runTime().timeName(),
-                    mesh(),
-                    IOobject::NO_READ,
-                    IOobject::AUTO_WRITE
-                ),
-                gradthetaYEdge.component(vector::Y)
-            );
-
-            // Constants after removing dimensions
-            const scalar D(bendingStiffness_.value());
-            const scalar nu(nu_.value());
-
-            // Contribution to internal edges
-            // The terms when put in source (RHS) will change
-            // signs. So the owner contributions are negative
-            // and neighbour is positive. // CHECK WITH IVAN??
-            forAll(aMesh_.internalEdges(), eI)
-            {
-                // thetaX part
-                thetaXEqn.source()[own[eI]] -=
-                    D*leI[eI]
-                   *(
-                        nu*gradThYY[eI]*nx[eI]
-                      + 0.5*(1 - nu)*gradThYX[eI]*ny[eI]
-                      - 0.5*(1 + nu)*gradThXY[eI]*ny[eI]
+                // Func call to evaluate grad theta contributions to source
+                const vectorField gradThetaContrib =
+                    calculateGradientThetaContribution
+                    (
+                        gradthetaXEdge,
+                        gradthetaYEdge
                     );
 
-                // thetaX part
-                thetaXEqn.source()[nei[eI]] +=
-                    D*leI[eI]
-                   *(
-                        nu*gradThYY[eI]*nx[eI]
-                      + 0.5*(1 - nu)*gradThYX[eI]*ny[eI]
-                      - 0.5*(1 + nu)*gradThXY[eI]*ny[eI]
-                    );
-
-/*                 // thetaY part
-                thetaYEqn.source()[own[eI]] -=
-                    D*leI[eI]
-                   *(
-                        0.5*(1 - nu)*gradThXY[eI]*nx[eI]
-                      + nu*gradThXX[eI]*ny[eI]
-                      - 0.5*(1 + nu)*gradThYX[eI]*nx[eI]
-                    );
-
-                // thetaY part
-                thetaYEqn.source()[nei[eI]] +=
-                    D*leI[eI]
-                   *(
-                        0.5*(1 - nu)*gradThXY[eI]*nx[eI]
-                      + nu*gradThXX[eI]*ny[eI]
-                      - 0.5*(1 + nu)*gradThYX[eI]*nx[eI]
-                    );
- */
-            }
-
-            // Boundary edges
-            forAll(thetaX_.boundaryField(), patchI)
-            {
-                const faePatchScalarField pGradThXX
-                (
-                    gradThXX.boundaryField()[patchI]
-                );
-
-                const faePatchScalarField pGradThXY
-                (
-                    gradThXY.boundaryField()[patchI]
-                );
-
-                const faePatchScalarField pGradThYX
-                (
-                    gradThYX.boundaryField()[patchI]
-                );
-
-                const faePatchScalarField pGradThYY
-                (
-                    gradThYY.boundaryField()[patchI]
-                );
-
-                const scalarField nxb
-                (
-                    edgeBiNormal.boundaryField()[patchI].component(vector::X)
-                );
-
-                const scalarField nyb
-                (
-                    edgeBiNormal.boundaryField()[patchI].component(vector::Y)
-                );
-
-                forAll(thetaX_.boundaryField()[patchI], pEdge)
+                // Assembling the diagonal coeffs of wEqn, thetaXEqn,
+                // and thetaYEqn into a block matrix
+                forAll(lapWDiag, i)
                 {
-                    // Boundary cell index
-                    const label bI = faBouMesh[patchI].edgeFaces()[pEdge];
-                    const scalar leB = le.boundaryField()[patchI][pEdge];
+                    // Diagonals of the block matrix diagonal
+                    // Coefficient of w in the wEqn
+                    matrix(3*i, 3*i) = lapWDiag[i];
 
-                    // thetaX part
-                    thetaXEqn.source()[bI] -=
-                        D*leB
-                       *(
-                            nu*pGradThYY[pEdge]*nxb[pEdge]
-                          + 0.5*(1 - nu)*pGradThYX[pEdge]*nyb[pEdge]
-                          - 0.5*(1 + nu)*pGradThXY[pEdge]*nyb[pEdge]
-                        );
-/*
-                    // thetaY part
-                    thetaYEqn.source()[bI] -=
-                        D*leB
-                       *(
-                            0.5*(1 - nu)*pGradThXY[pEdge]*nxb[pEdge]
-                          + nu*pGradThXX[pEdge]*nyb[pEdge]
-                          - 0.5*(1 + nu)*pGradThYX[pEdge]*nxb[pEdge]
-                        );
- */
+                    // Coefficient of thetaX in thetaXEqn
+                    matrix(3*i + 1, 3*i + 1) = lapThetaXDiag[i];
+
+                    // Coefficient of thetaY in thetaYEqn
+                    matrix(3*i + 2, 3*i + 2) = lapThetaYDiag[i];
+
+                    // Explicit coeffients of the wEqn go to RHS - source
+                    source[3*i] = p_[i]*mag(Sf[i]);
+
+
+                    // Source terms - fac::grad(w) and gradient of theta terms
+                    // to be added here
+                    // The signs are all positive here because they are already
+                    // included before
+                    // source[3*i + 1] += shearForceContrib[i].component(vector::X);
+                    // source[3*i + 2] += shearForceContrib[i].component(vector::Y);
+                    source[3*i + 1] += gradThetaContrib[i].component(vector::X);
+                    source[3*i + 2] += gradThetaContrib[i].component(vector::Y);
+
+                    // Add d2dt2 coeffs
+                    if(ddtSchemeName == "steadyState")
+                    {
+                        // Do not add any inertial contribution for d2dt2 terms
+                    }
+                    else if(ddtSchemeName != "steadyState" && d2dt2SchemeName == "Euler")
+                    {
+                        matrix(3*i, 3*i) += d2dt2WDiag[i];
+                        matrix(3*i + 1, 3*i + 1) += d2dt2ThetaXDiag[i];
+                        matrix(3*i + 2, 3*i + 2) += d2dt2ThetaYDiag[i];
+
+                        source[3*i] += d2dt2WSource[i];
+                        source[3*i + 1] += d2dt2ThetaXSource[i];
+                        source[3*i + 2] += d2dt2ThetaYSource[i];
+                    }
+                    else
+                    {
+                        FatalError("evolve() function in Mindlin plate solid") << nl
+                            << "Incompatible (or not defined) d2dt2Scheme "
+                            << d2dt2SchemeName << " is specified! "
+                            << abort(FatalError);
+                    }
                 }
+
+                forAll(lapWUpper, edgeI)
+                {
+                    const label i = own[edgeI];
+                    const label j = nei[edgeI];
+
+                    // 1. Off-diagonal components of the laplacian terms
+                    // Upper part of the matrix
+                    matrix(3*i, 3*j) = lapWUpper[i];
+                    matrix(3*i + 1, 3*j + 1) = lapThetaXUpper[i];
+                    matrix(3*i + 2, 3*j + 2) = lapThetaYUpper[i];
+
+                    // Lower part of the matrix
+                    matrix(3*j, 3*i) = lapWUpper[i];
+                    matrix(3*j + 1, 3*i + 1) = lapThetaXUpper[i];
+                    matrix(3*j + 2, 3*i + 2) = lapThetaYUpper[i];
+
+                    // Information reqd to compute fam::div(theta)
+                    const scalar wt = interpWeights.internalField()[edgeI];
+                    const scalar leI = le.internalField()[edgeI];
+                    const scalar nxEdge = nx[edgeI];
+                    const scalar nyEdge = ny[edgeI];
+                    const scalar Gamma = shearStrainStiffness_.value();
+                    const scalar delta = deltaCoeffs.internalField()[edgeI];
+
+
+                    // 2. fam::div(theta) implicit contributions
+                    const scalar thXCoeff = Gamma*nxEdge*leI;
+                    const scalar thYCoeff = Gamma*nyEdge*leI;
+
+                    const vector dROwn =
+                        edgeCentres[edgeI] - cellCentres[own[edgeI]];
+                    const vector dRNei =
+                        edgeCentres[edgeI] - cellCentres[nei[edgeI]];
+
+                    // 2. (-) Gamma \int_l fam::div(theta) dl
+                    // contribution to wEqn
+                    matrix(3*i, 3*i + 1) -= wt*thXCoeff;
+                    matrix(3*i, 3*i + 2) -= wt*thYCoeff;
+
+                    matrix(3*i, 3*j + 1) -= (1 - wt)*thXCoeff;
+                    matrix(3*i, 3*j + 2) -= (1 - wt)*thYCoeff;
+
+                    matrix(3*j, 3*i + 1) += wt*thXCoeff;
+                    matrix(3*j, 3*i + 2) += wt*thYCoeff;
+
+                    matrix(3*j, 3*j + 1) += (1 - wt)*thXCoeff;
+                    matrix(3*j, 3*j + 2) += (1 - wt)*thYCoeff;
+
+                    // 3a. (-) Gamma \int_l (x - x_P)*fam::div(theta) dl
+                    // contribution to the thetaX Eqn
+                    matrix(3*i + 1, 3*i + 1) -= wt*thXCoeff*dROwn.x();
+                    matrix(3*i + 1, 3*i + 2) -= wt*thYCoeff*dROwn.x();
+
+                    matrix(3*i + 1, 3*j + 1) -= (1 - wt)*thXCoeff*dROwn.x();
+                    matrix(3*i + 1, 3*j + 2) -= (1 - wt)*thYCoeff*dROwn.x();
+
+                    matrix(3*j + 1, 3*i + 1) += wt*thXCoeff*dRNei.x();
+                    matrix(3*j + 1, 3*i + 2) += wt*thYCoeff*dRNei.x();
+
+                    matrix(3*j + 1, 3*j + 1) += (1 - wt)*thXCoeff*dRNei.x();
+                    matrix(3*j + 1, 3*j + 2) += (1 - wt)*thYCoeff*dRNei.x();
+
+                    // 3b. (-) \int_l Gamma (y - y_P)*fam::div(theta) dl
+                    // contribution to the thetaY Eqn
+                    matrix(3*i + 2, 3*i + 1) -= wt*thXCoeff*dROwn.y();
+                    matrix(3*i + 2, 3*i + 2) -= wt*thYCoeff*dROwn.y();
+
+                    matrix(3*i + 2, 3*j + 1) -= (1 - wt)*thXCoeff*dROwn.y();
+                    matrix(3*i + 2, 3*j + 2) -= (1 - wt)*thYCoeff*dROwn.y();
+
+                    matrix(3*j + 2, 3*i + 1) += wt*thXCoeff*dRNei.y();
+                    matrix(3*j + 2, 3*i + 2) += wt*thYCoeff*dRNei.y();
+
+                    matrix(3*j + 2, 3*j + 1) += (1 - wt)*thXCoeff*dRNei.y();
+                    matrix(3*j + 2, 3*j + 2) += (1 - wt)*thYCoeff*dRNei.y();
+
+
+                    // 4. \int_l Gamma (x - x_P)*fam::grad(w) \dot n dl
+                    //  contribution to thetaX and thetaY
+                    matrix(3*i + 1, 3*i) -= Gamma*leI*delta*dROwn.x();
+                    matrix(3*i + 2, 3*i) -= Gamma*leI*delta*dROwn.y();
+
+                    matrix(3*i + 1, 3*j) += Gamma*leI*delta*dROwn.x();
+                    matrix(3*i + 2, 3*j) += Gamma*leI*delta*dROwn.y();
+
+                    matrix(3*j + 1, 3*i) -= Gamma*leI*delta*dROwn.x();
+                    matrix(3*j + 2, 3*i) -= Gamma*leI*delta*dROwn.y();
+
+                    matrix(3*j + 1, 3*j) += Gamma*leI*delta*dROwn.x();
+                    matrix(3*j + 2, 3*j) += Gamma*leI*delta*dROwn.y();
+
+                    // 2. (-) \int_l fam::div(theta) dl contribution to wEqn
+                    // // Off-diagonal of owner (diagonal) cell block
+                    // // thetaX and thetaY contribution in wEqn (fam::div(theta))
+                    // matrix(3*i, 3*i + 1) -= Gamma*((wt * nxEdge) * leI);
+                    // matrix(3*i, 3*i + 2) -= Gamma*((wt * nyEdge) * leI);
+
+                    // // Off-diagonal of owner cell block
+                    // // thetaY contribution in wEqn (fam::div(theta))
+                    // matrix(3*i, 3*j + 1) -= Gamma*(((1 - wt) * nxEdge) * leI);
+                    // matrix(3*i, 3*j + 2) -= Gamma*(((1 - wt) * nyEdge) * leI);
+
+                    // // Off-diagonal of neighbour cell block
+                    // // thetaX contribution in wEqn (fam::div(theta))
+                    // matrix(3*j, 3*i + 1) += Gamma*((wt * nxEdge) * leI);
+                    // matrix(3*j, 3*i + 2) += Gamma*((wt * nyEdge) * leI);
+
+                    // // Diagonal of neighbour cell block
+                    // // thetaX and thetaY contribution in wEqn (fam::div(theta))
+                    // matrix(3*j, 3*j + 1) += Gamma*(((1 - wt) * nxEdge) * leI);
+                    // matrix(3*j, 3*j + 2) += Gamma*(((1 - wt) * nyEdge) * leI);
+
+
+                    // // 3. Implicit terms of shear force in thetaX and thetaY Eqns
+                    // // Owner cell (thetaX)
+                    // 3a. (-) \int_l (x - x_P)*fam::div(theta) dl contribution
+                    // to the thetaX Eqn
+                    // matrix(3*i + 1, 3*i + 1) -= Gamma*leI*wt*nxEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[own[edgeI]].x());
+                    // matrix(3*i + 1, 3*i + 2) -= Gamma*leI*wt*nyEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[own[edgeI]].x());
+
+                    // matrix(3*i + 1, 3*j + 1) -= Gamma*leI*(1 - wt)*nxEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[own[edgeI]].x());
+                    // matrix(3*i + 1, 3*j + 2) -= Gamma*leI*(1 - wt)*nyEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[own[edgeI]].x());
+
+
+                    // // Neighbour cell (thetaX)
+                    // 3b. (-) \int_l (y - y_P)*fam::div(theta) dl contribution
+                    // to the thetaY Eqn
+                    // matrix(3*j + 1, 3*i + 1) += Gamma*leI*wt*nxEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[nei[edgeI]].x());
+                    // matrix(3*j + 1, 3*i + 2) += Gamma*leI*wt*nyEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[nei[edgeI]].x());
+
+                    // matrix(3*j + 1, 3*j + 1) += Gamma*leI*(1 - wt)*nxEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[nei[edgeI]].x());
+                    // matrix(3*j + 1, 3*j + 2) += Gamma*leI*(1 - wt)*nyEdge
+                    //     *(edgeCentres[edgeI].x() - cellCentres[nei[edgeI]].x());
+
+                    // // Owner cell (thetaY)
+                    // matrix(3*i + 2, 3*i + 1) -= Gamma*leI*wt*nxEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[own[edgeI]].y());
+                    // matrix(3*i + 2, 3*i + 2) -= Gamma*leI*wt*nyEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[own[edgeI]].y());
+
+                    // matrix(3*i + 2, 3*j + 1) -= Gamma*leI*(1 - wt)*nxEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[own[edgeI]].y());
+                    // matrix(3*i + 2, 3*j + 2) -= Gamma*leI*(1 - wt)*nyEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[own[edgeI]].y());
+
+
+                    // // Neighbour cell (thetaY)
+                    // matrix(3*j + 2, 3*i + 1) += Gamma*leI*wt*nxEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[nei[edgeI]].y());
+                    // matrix(3*j + 2, 3*i + 2) += Gamma*leI*wt*nyEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[nei[edgeI]].y());
+
+                    // matrix(3*j + 2, 3*j + 1) += Gamma*leI*(1 - wt)*nxEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[nei[edgeI]].y());
+                    // matrix(3*j + 2, 3*j + 2) += Gamma*leI*(1 - wt)*nyEdge
+                    //     *(edgeCentres[edgeI].y() - cellCentres[nei[edgeI]].y());
+
+                }
+                // Loop over boundary patches
+                forAll(w_.boundaryField(), patchI)
+                {
+                    const word& patchNameW(w_.boundaryField()[patchI].type());
+                    const word& patchNameThX(thetaX_.boundaryField()[patchI].type());
+                    const word& patchNameThY(thetaY_.boundaryField()[patchI].type());
+
+                    const List<scalar>& pDelta(aMesh_.boundary()[patchI].deltaCoeffs());
+                    const scalar Gamma = shearStrainStiffness_.value();
+                    const vectorField pEdgeCentres(edgeCentres.boundaryField()[patchI]);
+
+                    // This is wrong as pCellCentres and pEdgeCentres at boundaries are same
+                    // const vectorField pCellCentres(cellCentres.boundaryField()[patchI]);
+
+                    const scalarField nxb
+                    (
+                        edgeBiNormal.boundaryField()[patchI].component(vector::X)
+                    );
+
+                    const scalarField nyb
+                    (
+                        edgeBiNormal.boundaryField()[patchI].component(vector::Y)
+                    );
+
+                    // Procedure to grab the IDs of cells attached to boundary edges
+                    // The information on owners of boundary edges is stored in
+                    // aMesh_.edgeOwners(). The goal here is to extract the labels
+                    // of individual boundary patches.
+
+                    // const label nBouEdges = pEdgeCentres.size();
+                    // const label nIntEdges = aMesh_.internalEdges().size();
+                    // labelList cellCentreBou(nBouEdges, 0.0);
+                    // const label startIndex(nIntEdges + patchI*nBouEdges);
+
+                    // for (label i = 0; i <= nBouEdges; ++i)
+                    // {
+                    //     cellCentreBou[i] = edgeOwn[startIndex + i];
+                    // }
+
+                    // Loop over all faces of boundary patch
+                    forAll(w_.boundaryField()[patchI], faceI)
+                    {
+                        // Boundary cell index
+                        const label bI = faBouMesh[patchI].edgeFaces()[faceI];
+                        const scalar leB = le.boundaryField()[patchI][faceI];
+                        const scalar delB = pDelta[faceI];
+                        // const label cellID = cellCentreBou[faceI];
+
+                        const vector pDr = (pEdgeCentres[faceI] - cellCentres[bI]);
+                        const scalar pThXCoeff = Gamma*nxb[faceI]*leB;
+                        const scalar pThYCoeff = Gamma*nyb[faceI]*leB;
+
+                        // Contribution of boundary edges to the diagonal of the matrix
+                        matrix(3*bI, 3*bI) += lapWIntCoeffs[patchI][faceI];
+                        matrix(3*bI + 1, 3*bI + 1) += lapThetaXIntCoeffs[patchI][faceI];
+                        matrix(3*bI + 2, 3*bI + 2) += lapThetaYIntCoeffs[patchI][faceI];
+
+                        // Explicit contribution of boundary edges to the source
+                        source[3*bI] += lapWBouCoeffs[patchI][faceI];
+                        source[3*bI + 1] += lapThetaXBouCoeffs[patchI][faceI];
+                        source[3*bI + 2] += lapThetaYBouCoeffs[patchI][faceI];
+
+                        if(patchNameW == "fixedValue")
+                        {
+                            // Boundary Coefficients of fam::grad(w)
+                            matrix(3*bI + 1, 3*bI) -= Gamma*leB*delB*pDr.x();
+                            matrix(3*bI + 2, 3*bI) -= Gamma*leB*delB*pDr.y();
+                        }
+                        else
+                        {
+                            FatalErrorIn
+                            (
+                                "bool mindlinDemirdzicPlateSolid::evolve()"
+                            )   << "Block-Coupled Approach not implemented for BC: "
+                                << patchNameW
+                                << abort(FatalError);
+                        }
+
+                        if (patchNameThX == "fixedValue" && patchNameThY == "fixedValue")
+                        {
+                        // For clamped ends all sides, thetaX and thetaY are
+                        // zero at BC. Hence zero contribution
+                        }
+                        else if (patchNameThX == "zeroGradient" && patchNameThY == "zeroGradient")
+                        {
+                            matrix(3*bI + 1, 3*bI + 1) -= pThXCoeff*pDr.x();
+                            matrix(3*bI + 1, 3*bI + 2) -= pThYCoeff*pDr.x();
+
+                            matrix(3*bI + 2, 3*bI + 1) -= pThXCoeff*pDr.y();
+                            matrix(3*bI + 2, 3*bI + 2) -= pThYCoeff*pDr.y();
+                        }
+                        else
+                        {
+                            FatalErrorIn
+                            (
+                                "bool mindlinDemirdzicPlateSolid::evolve()"
+                            )   << "Block-Coupled Approach not implemented for thetaX BC: "
+                                << patchNameThX << " and thetaY BC: "
+                                << patchNameThY
+                                << abort(FatalError);
+                        }
+
+                    }
+                }
+
+                if(debug > 1)
+                {
+                    Info<< "\nBlock Matrix Coefficients: " << matrix.data() << endl;
+                    Info<< "\nSource vector: " << source << endl;
+                }
+
+                // Solve the linear system of equations
+                // Using Eigen SparseLU direct solver
+                sparseMatrixTools::solveLinearSystemEigen
+                (
+                    matrix, source, solveWTheta, false, debug
+                );
+
+                // Retrieve solution
+                for(label i = 0; i < nCells; ++i)
+                {
+                    w_[i] = solveWTheta[3*i];
+                    thetaX_[i] = solveWTheta[3*i + 1];
+                    thetaY_[i] = solveWTheta[3*i + 2];
+                }
+
+                // Correct the boundary conditions for w, thetaX and thetaY
+                w_.correctBoundaryConditions();
+                thetaX_.correctBoundaryConditions();
+                thetaY_.correctBoundaryConditions();
             }
-            /*---------------------------------------------------------------*/
-            /*---------------------------------------------------------------*/
-            thetaXEqn.relax();
-
-            // Solve the linear system
-            solverPerfThetaX = thetaXEqn.solve();
-
-            // Relax thetaX field
-            thetaX_.relax();
-
-            // Gradient of thetaX (TO BE CHANGED)
-            gradThetaX_ = fac::grad(thetaX_);
-
-            /*---------------------------------------------------------------*/
-            /*---------------------------------------------------------------*/
-            // 3 - thetaY eqn
-            // thetaYEqn.relax();
-
-            // // Solve the linear system
-            // solverPerfThetaY = thetaYEqn.solve();
-
-            // thetaY_.relax();
-
-            // // Gradient of thetaY (TO BE CHANGED)
-            // gradThetaY_ = fac::grad(thetaY_);
+            while
+            (
+                !blockConverged
+                (
+                    iCorr,
+                    w_,
+                    thetaX_,
+                    thetaY_
+                )
+                &&
+                ++iCorr < nCorr()
+            );
         }
-        while
-        (
-            !converged
+        else
+        {
+
+            // const scalar scaleW(readScalar(solidModelDict().lookup("scaleW")));
+
+            // Approach 2: Using segregated method of solving w, thetaX and thetaY equations separately
+            // and then iteratively update them until the values fall below a solution tolerance
+
+            Info<< "\nUsing segregated approach to solve for w, thetaX and thetaY eqns "
+                << "separately and iteratively update them!" << endl;
+
+            do
+            {
+                // w_ = scaleW*wAnalytical_;
+
+                theta = thetaX_*vector(1, 0, 0) + thetaY_*vector(0, 1, 0);
+
+                // Info<< "theta " << theta << endl;
+                // Theta vector at edge centres
+                const edgeVectorField thetaEdge(fac::interpolate(theta));
+                // Store the previous iteration values for computing source vector
+                // The storePrevIter values are also brought inside this do-loop
+                // Should not make much difference.
+
+                w_.storePrevIter();
+                thetaX_.storePrevIter();
+                thetaY_.storePrevIter();
+                gradW_.storePrevIter();
+                gradThetaX_.storePrevIter();
+                gradThetaY_.storePrevIter();
+
+                // w_.storeOldTime();
+                // thetaX_.storeOldTime();
+                // thetaY_.storeOldTime();
+                // gradW_.storeOldTime();
+                // gradThetaX_.storeOldTime();
+                // gradThetaY_.storeOldTime();
+
+                // Solve w equation
+                // Also, "==" complains so we will move all terms to left
+                // QUESTION - Is fac::div(shearStrainStiffness_*theta)
+                // equivalent to physically looping over edges and putting
+                // theta contributions interpolated at the edges in the wEqn?
+                // I think it is correct because that is how fac::div
+                // is calculated, but need to CHECK WITH IVAN.
+                faScalarMatrix wEqn
+                (
+                    fam::laplacian(shearStrainStiffness_, w_)
+                  - fac::div(shearStrainStiffness_*theta)
+                  - p_
+                );
+
+                // d2dt2 can only take Euler as keyword, but if the user wants it to
+                // be steadyState, it cannot happen. Hence check for ddtScheme
+                // and add inertial terms for not steady state!!
+                if(ddtSchemeName != "steadyState")
+                {
+                    wEqn -= rho_*h_*(fac::d2dt2(w_));
+                }
+
+                // Add stabilisation term
+                // laplacian(w) is mathematically the same as div(grad(w)) but
+                // numerically different for a given mesh (but they converge to the
+                // TODO: we should store gradW to avoid repeatedly calculating it!
+                if (alphaW > 0.0)
+                {
+                    wEqn +=
+                        alphaW
+                    *(
+                            fac::div(shearStrainStiffness_*gradW_)
+                        - fac::laplacian(shearStrainStiffness_, w_)
+                        );
+                }
+
+                // Relax the linear system
+                wEqn.relax();
+
+                // Solve the linear system
+                solverPerfw = wEqn.solve();
+
+                // Relax the field
+                w_.relax();
+
+                // Update the gradient of displacement
+                gradW_ = fac::grad(w_);
+
+                /*---------------------------------------------------------------*/
+                /*---------------------------------------------------------------*/
+                // 2 - thetaX eqn
+                // thetaX_.storePrevIter();
+
+                // Initialise thetaX equation with implicit laplacian terms
+                faScalarMatrix thetaXEqn
+                (
+                    fam::laplacian(bendingStiffness_, thetaX_)
+                  - fam::Sp(shearStrainStiffness_, thetaX_)
+                  + shearStrainStiffness_*thetaX_
+                    // The fam:Sp terms above needs to be added implictly and
+                    // removed explictly to increase diagonal dominance
+                    // Otherwise the solver wont converge
+                    // This trick in not mentioned in Demirdzic 1997 paper.
+                );
+
+                // Initialise thetaY equation with implicit laplacian terms
+                faScalarMatrix thetaYEqn
+                (
+                    fam::laplacian(bendingStiffness_, thetaY_)
+                  - fam::Sp(shearStrainStiffness_, thetaY_)
+                  + shearStrainStiffness_*thetaY_
+                    // Same comment as thetaX Eqn
+                );
+
+                // d2dt2 can only take Euler as keyword, but if the user wants it to
+                // be steadyState, it cannot happen. Hence check for ddtScheme
+                // and add inertial terms for not steady state!!
+                if(ddtSchemeName != "steadyState")
+                {
+                    thetaXEqn -= rho_*pow(h_,3)*(fac::d2dt2(thetaX_))/12;
+                    thetaYEqn -= rho_*pow(h_,3)*(fac::d2dt2(thetaY_))/12;
+                }
+
+                if (alphaTheta > 0.0)
+                {
+                    thetaXEqn +=
+                        alphaTheta
+                        *(
+                            fac::div(bendingStiffness_*gradThetaX_)
+                          - fac::laplacian(bendingStiffness_, thetaX_)
+                        );
+
+                    thetaYEqn +=
+                        alphaTheta
+                        *(
+                            fac::div(bendingStiffness_*gradThetaY_)
+                          - fac::laplacian(bendingStiffness_, thetaY_)
+                        );
+                }
+
+                /*---------------------------------------------------------------*/
+                /*---------------------------------------------------------------*/
+                edgeVectorField gradWEdge(fac::interpolate(gradW_));
+
+                // Avoid oscillations in gradient calculations
+                if (compactEdgeNormalGrad)
+                {
+                    const edgeScalarField lnGradWEdge(fac::lnGrad(w_));
+                    gradWEdge +=
+                        lnGradWEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradWEdge);
+                }
+
+                // const vectorField gradWEdgeI(gradWEdge.internalField());
+                // const scalarField leI(le.internalField());
+
+                // APPROACH 2 (LOOP OVER CELLS and for each cell LOOP over EDGES)
+                const edgeVectorField shearForceEdge
+                (
+                    shearStrainStiffness_*(gradWEdge - thetaEdge)
+                );
+
+                // Function call to evaluate the shear force contribution to source
+                const vectorField shearForceContrib =
+                    calculateShearForceContribution(shearForceEdge);
+
+                thetaXEqn.source() += shearForceContrib.component(vector::X);
+                thetaYEqn.source() += shearForceContrib.component(vector::Y);
+
+                /*---------------------------------------------------------------*/
+                /*---------------------------------------------------------------*/
+                // GRADIENT THETA TERMS OF THE SOURCE
+                // The first three terms of s_{\phi \l} term of thetaX and thetaY variables
+                // in Demirdzic 1997 plate paper.
+
+                // Interpolate grad(thetaX), grad(thetaY) to edges
+                edgeVectorField gradthetaXEdge(fac::interpolate(gradThetaX_));
+                edgeVectorField gradthetaYEdge(fac::interpolate(gradThetaY_));
+
+                // Avoid oscillations in gradient calculations
+                if (compactEdgeNormalGrad)
+                {
+                    const edgeScalarField lnGradThetaXEdge(fac::lnGrad(thetaX_));
+                    const edgeScalarField lnGradThetaYEdge(fac::lnGrad(thetaY_));
+
+                    gradthetaXEdge +=
+                        lnGradThetaXEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradthetaXEdge);
+
+                    gradthetaYEdge +=
+                        lnGradThetaYEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradthetaYEdge);
+                }
+
+                // Function call to evaluate the gradient theta contributions to source
+                const vectorField gradThetaContrib =
+                    calculateGradientThetaContribution
+                    (
+                        gradthetaXEdge,
+                        gradthetaYEdge
+                    );
+
+                thetaXEqn.source() -= gradThetaContrib.component(vector::X);
+                thetaYEqn.source() -= gradThetaContrib.component(vector::Y);
+
+                /*---------------------------------------------------------------*/
+                /*---------------------------------------------------------------*/
+                // Solve the linear system
+                solverPerfThetaX = thetaXEqn.solve();
+
+                // Relax thetaX field
+                thetaX_.relax();
+
+                // Gradient of thetaX (TO BE CHANGED)
+                gradThetaX_ = fac::grad(thetaX_);
+
+                /*---------------------------------------------------------------*/
+                /*---------------------------------------------------------------*/
+                // 3 - thetaY eqn
+                // Solve the linear system
+                solverPerfThetaY = thetaYEqn.solve();
+
+                thetaY_.relax();
+
+                // Gradient of thetaY (TO BE CHANGED)
+                gradThetaY_ = fac::grad(thetaY_);
+            }
+            while
             (
-                iCorr,
-                solverPerfw,
-                solverPerfThetaX,
-                // solverPerfThetaY,
-                w_,
-                thetaX_
-                // thetaY_
-            )
-            &&
-            ++iCorr < nCorr()
-        );
+                !converged
+                (
+                    iCorr,
+                    solverPerfw,
+                    solverPerfThetaX,
+                    solverPerfThetaY,
+                    w_,
+                    thetaX_,
+                    thetaY_
+                )
+                &&
+                ++iCorr < nCorr()
+            );
+        }
+
 
         // Map area fields to vol fields
         mapAreaFieldToSingleLayerVolumeField(w_, wVf_);

@@ -19,8 +19,8 @@ Class
     mindlinDemirdzicPlateSolid
 
 Description
-    Mindlin plate solver coded according to Demirdzic.
-
+    Mindlin plate solver coded according to Demirdzic 1997 paper.
+    https://www.researchgate.net/publication/320198027
     Primary variables - w, thetaX, thetaY (3 scalars)
 
 Author
@@ -73,6 +73,9 @@ class mindlinDemirdzicPlateSolid
         //- Transverse displacement volume field for visualisation
         volScalarField wVf_;
 
+        //- Analytical solution of w (used for debugging)
+        areaScalarField wAnalytical_;
+
         //- Gradient of displacement field
         areaVectorField gradW_;
 
@@ -81,7 +84,7 @@ class mindlinDemirdzicPlateSolid
 
         //- Net pressure field on the plate volume field
         volScalarField pVf_;
-        
+
         //- Angle of rotation thetaX (about y - axis)
         areaScalarField thetaX_;
 
@@ -137,6 +140,9 @@ class mindlinDemirdzicPlateSolid
         //  areaPatch to the areaShadowPatch
         mutable label areaShadowPatchID_;
 
+        // Boolean to switch to block coupled approach
+        const bool coupled_;
+
         //- Debug flag
         const bool debug_;
 
@@ -149,16 +155,47 @@ class mindlinDemirdzicPlateSolid
     #ifdef OPENFOAM_NOT_EXTEND
         const SolverPerformance<scalar>& solverPerfw,
         const SolverPerformance<scalar>& solverPerfThetaX,
-        // const SolverPerformance<scalar>& solverPerfThetaY,
+        const SolverPerformance<scalar>& solverPerfThetaY,
     #else
         const lduSolverPerformance& solverPerfw,
         const lduSolverPerformance& solverPerfThetaX,
-        // const lduSolverPerformance& solverPerfThetaY,
+        const lduSolverPerformance& solverPerfThetaY,
     #endif
         const areaScalarField& w,
-        const areaScalarField& thetaX
-        // const areaScalarField& thetaY
+        const areaScalarField& thetaX,
+        const areaScalarField& thetaY
         );
+
+        //- Check if the momentum equation is converged
+        //- block coupled approach
+        bool blockConverged
+        (
+        const int iCorr,
+        const areaScalarField& w,
+        const areaScalarField& thetaX,
+        const areaScalarField& thetaY
+        );
+
+
+        //- Member function to calculate the explicit source
+        //- contribution of shear force to thetaX and thetaY Eqns
+        //- G*h*(x - x_p)*(grad(w) - theta) \cdot n
+        //- G*h*(x - x_p)*(grad(w) - theta) \cdot n
+        const vectorField calculateShearForceContribution
+        (
+            const edgeVectorField& shearForceEdge
+        ) const;
+
+        //- Member function to calculate the explicit source
+        //- contribution of gradients of thetaX & thetaY
+        //- to thetaX and thetaY Eqns.
+        //- First three terms of source of thetaX and thetaY
+        //- in demirdzic 1997 paper
+        const vectorField calculateGradientThetaContribution
+        (
+            const edgeVectorField& gradthetaXEdge,
+            const edgeVectorField& gradthetaYEdge
+        ) const;
 
         //- Return a reference to the areaPatch
         const fvPatch& areaPatch() const;
