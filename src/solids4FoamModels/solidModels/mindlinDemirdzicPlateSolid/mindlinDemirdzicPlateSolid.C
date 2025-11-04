@@ -1215,6 +1215,8 @@ bool mindlinDemirdzicPlateSolid::evolve()
                 //         lnGradWEdge*edgeBiNormal - (sqr(edgeBiNormal) & gradWEdge);
                 // }
 
+
+                // Explicit shear force calculation
                 // const edgeVectorField shearForceEdge
                 // (
                 //     shearStrainStiffness_*(gradWEdge - thetaEdge)
@@ -1259,6 +1261,14 @@ bool mindlinDemirdzicPlateSolid::evolve()
                         gradthetaYEdge
                     );
 
+
+                // EXPLANATION NOTE ON LOOPING:
+                // There are 3 unknowns per cell. So block matrix is 3N by 3N
+                // for N cells.
+                // Notation:
+                // 3i for wEqn, 3i + 1 for thetaXEqn and 3i + 2 for thetaYEqn
+
+
                 // Assembling the diagonal coeffs of wEqn, thetaXEqn,
                 // and thetaYEqn into a block matrix
                 forAll(lapWDiag, i)
@@ -1277,12 +1287,18 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     source[3*i] = p_[i]*mag(Sf[i]);
 
 
-                    // Source terms - fac::grad(w) and gradient of theta terms
-                    // to be added here
+                    // Other Source terms
                     // The signs are all positive here because they are already
                     // included before
+
+                    // 1. Shear force contribution to thetaX and thetaY
+                    // Now it is commented because the contributions are
+                    // implicitly added
                     // source[3*i + 1] += shearForceContrib[i].component(vector::X);
                     // source[3*i + 2] += shearForceContrib[i].component(vector::Y);
+
+                    // 2. Gradient of thetaX and thetaY contributions go to the
+                    // source terms of thetaX and thetaY equations
                     source[3*i + 1] += gradThetaContrib[i].component(vector::X);
                     source[3*i + 2] += gradThetaContrib[i].component(vector::Y);
 
@@ -1326,7 +1342,9 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     matrix(3*j + 1, 3*i + 1) = lapThetaXUpper[i];
                     matrix(3*j + 2, 3*i + 2) = lapThetaYUpper[i];
 
-                    // Information reqd to compute fam::div(theta)
+                    // Information reqd to compute fam::div(theta) and fam::grad(w)
+                    // fam::div(theta) appears in wEqn and both thetaX
+                    // and thetaY Eqns
                     const scalar wt = interpWeights.internalField()[edgeI];
                     const scalar leI = le.internalField()[edgeI];
                     const scalar nxEdge = nx[edgeI];
@@ -1335,45 +1353,57 @@ bool mindlinDemirdzicPlateSolid::evolve()
                     const scalar delta = deltaCoeffs.internalField()[edgeI];
 
 
-                    // 2. fam::div(theta) implicit contributions
+                    // 2. fam::div(theta) implicit coeffs without
+                    // the interpolated weights
                     const scalar thXCoeff = Gamma*nxEdge*leI;
                     const scalar thYCoeff = Gamma*nyEdge*leI;
 
+                    // Moment arms for the shear force contributions
+                    // (x_f - x_p) and (y_f - y_p) terms
                     const vector dROwn =
                         edgeCentres[edgeI] - cellCentres[own[edgeI]];
                     const vector dRNei =
                         edgeCentres[edgeI] - cellCentres[nei[edgeI]];
 
                     // 2. (-) Gamma \int_l fam::div(theta) dl
-                    // contribution to wEqn
+                    // Contribution to wEqn - Hence row index is 3i
+                    // thetaX contribution to wEqn goes to 3i + 1 column
+                    // Owner Cell
                     matrix(3*i, 3*i + 1) -= wt*thXCoeff;
                     matrix(3*i, 3*i + 2) -= wt*thYCoeff;
 
+                    // Neighbour contribution in owner cell row
                     matrix(3*i, 3*j + 1) -= (1 - wt)*thXCoeff;
                     matrix(3*i, 3*j + 2) -= (1 - wt)*thYCoeff;
 
+                    // Owner contribution in neighbour cell row (flipped signs)
                     matrix(3*j, 3*i + 1) += wt*thXCoeff;
                     matrix(3*j, 3*i + 2) += wt*thYCoeff;
 
+                    // Nei contribution in neighbour cell row (flipped signs)
                     matrix(3*j, 3*j + 1) += (1 - wt)*thXCoeff;
                     matrix(3*j, 3*j + 2) += (1 - wt)*thYCoeff;
 
                     // 3a. (-) Gamma \int_l (x - x_P)*fam::div(theta) dl
-                    // contribution to the thetaX Eqn
+                    // Contribution to the thetaX Eqn - hence row index is 3i + 1
+                    // Owner Cell
                     matrix(3*i + 1, 3*i + 1) -= wt*thXCoeff*dROwn.x();
                     matrix(3*i + 1, 3*i + 2) -= wt*thYCoeff*dROwn.x();
 
+                    // Neighbour contribution in owner cell row
                     matrix(3*i + 1, 3*j + 1) -= (1 - wt)*thXCoeff*dROwn.x();
                     matrix(3*i + 1, 3*j + 2) -= (1 - wt)*thYCoeff*dROwn.x();
 
+                    // Owner contribution in neighbour cell row (flipped signs)
                     matrix(3*j + 1, 3*i + 1) += wt*thXCoeff*dRNei.x();
                     matrix(3*j + 1, 3*i + 2) += wt*thYCoeff*dRNei.x();
 
+                    // Nei contribution in neighbour cell row (flipped signs)
                     matrix(3*j + 1, 3*j + 1) += (1 - wt)*thXCoeff*dRNei.x();
                     matrix(3*j + 1, 3*j + 2) += (1 - wt)*thYCoeff*dRNei.x();
 
                     // 3b. (-) \int_l Gamma (y - y_P)*fam::div(theta) dl
-                    // contribution to the thetaY Eqn
+                    // contribution to the thetaY Eqn - row index 3i + 2
                     matrix(3*i + 2, 3*i + 1) -= wt*thXCoeff*dROwn.y();
                     matrix(3*i + 2, 3*i + 2) -= wt*thYCoeff*dROwn.y();
 
@@ -1389,6 +1419,8 @@ bool mindlinDemirdzicPlateSolid::evolve()
 
                     // 4. \int_l Gamma (x - x_P)*fam::grad(w) \dot n dl
                     //  contribution to thetaX and thetaY
+                    // fam::grad(w) \cdot n is the surface normal component
+                    // For orthgonal meshes only
                     matrix(3*i + 1, 3*i) -= Gamma*leI*delta*dROwn.x();
                     matrix(3*i + 2, 3*i) -= Gamma*leI*delta*dROwn.y();
 
@@ -1523,11 +1555,13 @@ bool mindlinDemirdzicPlateSolid::evolve()
                         const scalar delB = pDelta[faceI];
                         // const label cellID = cellCentreBou[faceI];
 
+                        // Information for boundary cells and coefficients
                         const vector pDr = (pEdgeCentres[faceI] - cellCentres[bI]);
                         const scalar pThXCoeff = Gamma*nxb[faceI]*leB;
                         const scalar pThYCoeff = Gamma*nyb[faceI]*leB;
 
                         // Contribution of boundary edges to the diagonal of the matrix
+                        // Laplacian terms
                         matrix(3*bI, 3*bI) += lapWIntCoeffs[patchI][faceI];
                         matrix(3*bI + 1, 3*bI + 1) += lapThetaXIntCoeffs[patchI][faceI];
                         matrix(3*bI + 2, 3*bI + 2) += lapThetaYIntCoeffs[patchI][faceI];
