@@ -1,0 +1,110 @@
+beamSolid: standalone beam mechanics through solids4Foam
+=======================================================
+
+Validated with OpenFOAM.com v2412, double precision, 32-bit labels, serial.
+v2306, v2312 and v2512 are future validation targets, not verified versions.
+
+Build
+-----
+From the solids4foam root, after sourcing OpenFOAM and building the existing
+solids4foam libraries and ThirdParty Eigen dependency:
+
+    src/beamModels/Allwmake
+    src/beamSolid/Allwmake
+    applications/utilities/createBeamMesh/Allwmake
+    applications/utilities/setInitialPositionBeam/Allwmake
+
+The normal Allwmake also includes these targets for OpenFOAM.com when
+S4F_NO_USE_EIGEN is unset. OpenFOAM.org and foam-extend builds skip them.
+The beam libraries are loaded by the case; solids4Foam.C is unchanged.
+Do not load the original libwireBunchingModels alongside the migrated library.
+
+Case configuration
+------------------
+system/controlDict:
+
+    application solids4Foam;
+    libs ("libS4FBeamSolid.so");
+    startFrom startTime;
+    startTime 0;
+
+constant/physicsProperties:
+
+    type solid;
+
+constant/solidProperties:
+
+    solidModel beamSolid;
+    beamSolidCoeffs
+    {
+        solutionAlgorithm implicitCoupled;
+        infoFrequency 1;
+    }
+
+Retain constant/beamProperties and the W and Theta initial fields. Add a
+constant/g uniformDimensionedVectorField as required by solidModel; use zero
+for cases without gravity. Beam solver tolerances and material/section data
+remain in beamProperties. No continuum mechanicalProperties file is needed.
+
+Change beam boundary types fixedDisplacement and fixedRotation to
+beamFixedDisplacement and beamFixedRotation, respectively. Other beam
+boundary types keep their original names.
+
+Mesh and fields
+---------------
+Use createBeamMesh, followed by setInitialPositionBeam when needed. The solid
+base loads this BEAM mesh. The embedded beam model borrows the same dynamicFvMesh;
+it does not construct a continuum mesh. Both use pointMesh::New for a common
+point-mesh wrapper. Points, faces, cell zones and cross-section data are retained.
+
+W and Theta remain the primary beam fields. pointW includes cross-section
+rotation. The adapter updates inherited D/DD and pointD/pointDD for the solid
+interface and returns the beam U field. It suppresses unused continuum stress
+output and delegates field writing to beamFoam. Continuum traction boundary
+conditions are rejected; use the beam force and moment boundary conditions.
+The original fixed-step application behavior is retained.
+
+Tutorials
+---------
+Run ./Allrun in any of these directories under tutorials/solids/beamsPlatesShells:
+
+    beamCantilever
+    beamDynamicCantilever
+    beamFollowerForce
+
+The dynamic tutorial includes the original initial-rotation utility step.
+All tutorials start at zero and do not require plotting software.
+
+Validation and limits
+---------------------
+Three clean original/migrated pairs were run from time zero. All 2700 written
+field files matched exactly after normalising the two boundary type names.
+All 11 displacement, force/moment, energy and convergence history files matched
+byte-for-byte. The imported mesh utility produced byte-identical points,
+connectivity, boundary and zone files for the cantilever. The existing continuum
+patchTest also passed with libS4FBeamSolid loaded, exercising the original
+continuum fixedDisplacement boundary condition alongside the beam versions.
+
+DYNAMIC RESTART IS NOT VALIDATED FOR CONTINUOUS-RUN EQUIVALENCE. Restarting at
+0.5 reproduced the original beamFoam restarted result exactly, but both differed
+from an uninterrupted run. The original model marks dynamic state fields such
+as U, Accl, Omega and dotOmega NO_WRITE. This migration preserves that behavior.
+Use uninterrupted runs from time zero until restart-state persistence is fixed
+and separately validated. Setting the inherited solidModel restart switch does
+not make the beam state restart-complete.
+
+Fluid coupling, multiple regions, parallel execution and optional spring,
+contact and wave/Morison loading are outside the validated first phase. Existing
+optional implementation files remain in the imported library to preserve its
+dependencies; their presence is not a claim of validated integration.
+
+Comprehensive migration summary
+-------------------------------
+See ../../docs/beamFoam-migration-summary.txt for the architecture, file-level
+changes, build/case setup, validation evidence, and remaining limitations.
+
+Current upstream base
+---------------------
+The migration was rebuilt and revalidated on upstream development commit
+09b315b3c91223eb105c44e6422c394d75e60b4b on 21 October 2026.
+See ../../docs/beamFoam-upstream-validation.txt for the current results.

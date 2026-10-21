@@ -1,0 +1,17 @@
+#!/bin/bash
+cd "${0%/*}" || exit 1
+
+if [ -f "$WM_PROJECT_DIR/wmake/scripts/AllwmakeParseArguments" ]
+then
+    . "$WM_PROJECT_DIR/wmake/scripts/AllwmakeParseArguments"
+fi
+
+# The migrated beam utilities currently target OpenFOAM.com with Eigen.
+case "$WM_PROJECT_VERSION" in
+    v*)
+        if [[ -z "${S4F_NO_USE_EIGEN:-}" ]]
+        then
+            wmake $targetType
+        fi
+        ;;
+esac

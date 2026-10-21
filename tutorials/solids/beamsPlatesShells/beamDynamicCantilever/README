@@ -1,0 +1,5 @@
+Dynamic cantilever with the original 90-degree reference rotation.
+
+Run ./Allrun with OpenFOAM.com v2412 and solids4foam sourced.
+Use a clean time-zero run; dynamic restart is not validated.
+See ../../../../src/beamSolid/README for configuration and validation details.

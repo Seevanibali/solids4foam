@@ -1,0 +1,81 @@
+BEAM SOLID INTEGRATION: CURRENT UPSTREAM VALIDATION
+=================================================
+
+Date: 21 October 2026
+Branch: beam-solid-integration
+Upstream: https://github.com/solids4foam/solids4foam
+Base branch: development
+Base commit: 09b315b3c91223eb105c44e6422c394d75e60b4b
+
+This branch starts directly from the upstream development commit above.
+It contains the beam migration from the earlier local implementation; it
+does not include changes from Seevanibali/solids4foam:development.
+
+Changes needed for the current upstream base
+-------------------------------------------
+
+The beam library, solidModel adapter, mesh utilities, three tutorials, and
+migration documentation were transferred into a fresh checkout. The beam
+build/clean entries were inserted into the current upstream scripts,
+preserving upstream's immersedBoundary targets. The adapter compiled against
+the updated solidModel interface without API changes.
+
+Tutorial dictionary banners now follow the current solids4foam v2.4 format.
+Imported-source trailing whitespace was removed, and spacing between the new
+adapter's functions follows the current repository instructions. Original
+licenses and copyright attribution in imported beam code are retained.
+
+Validation
+----------
+
+All builds used OpenFOAM.com v2412, double precision, 32-bit labels, and
+separate output directories. The existing user-installed binaries were not
+replaced. Dynamic-library resolution was checked to ensure the new solver
+used the freshly built upstream libraries.
+
+Targets built successfully:
+
+    blockCoupledSolids4FoamTools
+    RBFMeshMotionSolver
+    solids4FoamModels (upstream unity build, 16 buckets)
+    beamModels
+    beamSolid
+    createBeamMesh
+    setInitialPositionBeam
+    solids4Foam
+
+Three fresh migrated cases were run from time zero. The dynamic case included
+the original setInitialPositionBeam rotation. Results were compared with the
+saved clean standalone beamFoam reference runs from the initial migration.
+
+    Case                   Field files   History files   Differences
+    beamCantilever         900           3               0
+    beamDynamicCantilever  900           5               0
+    beamFollowerForce      900           3               0
+    Total                  2700          11              0
+
+Field comparisons covered every reference output time and normalized only
+the fixedDisplacement/beamFixedDisplacement and fixedRotation/beamFixedRotation
+boundary-type names. This establishes equality at the configured output
+precision. All history files matched byte-for-byte.
+
+The latest upstream linearElasticity/patchTest also completed with
+libS4FBeamSolid loaded, verifying coexistence with the continuum solid model.
+
+Local evidence is in migration-validation/upstream-09b315b3 in the parent
+workspace, including log.build-*, log.validation, validation-summary.json,
+the isolated case directories, and validate.py. These generated artifacts,
+compiler outputs and the local Eigen link are not included in the branch.
+
+Limits
+------
+
+The original migration's dynamic restart limitation remains documented in
+src/beamSolid/README and docs/beamFoam-migration-summary.txt. Restart was not
+revalidated or repaired in this upstream transfer. The tests above cover
+uninterrupted time-zero runs.
+
+Other OpenFOAM versions, parallel/multi-region execution, fluid-beam coupling,
+and optional spring/contact/environmental loading remain outside the validated
+scope. This report records a targeted build/regression check, not a run of the
+full upstream test suite.

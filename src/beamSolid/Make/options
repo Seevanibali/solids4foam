@@ -1,0 +1,18 @@
+SOLIDS4FOAM_ROOT := ../..
+include $(SOLIDS4FOAM_ROOT)/etc/wmake-options
+
+EXE_INC = \
+    $(VERSION_SPECIFIC_INC) \
+    -I../solids4FoamModels/lnInclude \
+    -I../blockCoupledSolids4FoamTools/lnInclude \
+    -I../../ThirdParty/eigen3 \
+    -I../beamModels/lnInclude \
+    -I$(LIB_SRC)/finiteVolume/lnInclude \
+    -I$(LIB_SRC)/meshTools/lnInclude \
+    -I$(LIB_SRC)/dynamicFvMesh/lnInclude
+
+LIB_LIBS = \
+    -L$(FOAM_MODULE_LIBBIN) \
+    -lsolids4FoamModels \
+    -L$(FOAM_USER_LIBBIN) \
+    -lS4FBeamModels

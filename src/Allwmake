@@ -20,6 +20,17 @@ fi
 
 (cd solids4FoamModels && ./Allwmake $targetType $* 2>&1 | tee log.Allwmake)
 
+# Beam mechanics currently target OpenFOAM.com and require Eigen.
+case "$WM_PROJECT_VERSION" in
+    v*)
+        if [[ -z "${S4F_NO_USE_EIGEN:-}" ]]
+        then
+            (cd beamModels && ./Allwmake $targetType $* 2>&1 | tee log.Allwmake)
+            (cd beamSolid && ./Allwmake $targetType $* 2>&1 | tee log.Allwmake)
+        fi
+        ;;
+esac
+
 # The immersed boundary method is currently only implemented for OpenFOAM.com
 if [[ "$WM_PROJECT" == "OpenFOAM" && $WM_PROJECT_VERSION == v* ]]
 then
